@@ -1,162 +1,98 @@
 #!/usr/bin/env bash
 
+## TODO: skipModules --> bris-frontend:!bris-frontend-frontend # Exclude
+## TODO: skipModules --> bris-frontend:bris-frontend-domain # Include only
+
 ### Arrays
-declare -A OPTIONS
-declare -a feilliste=()
-declare -a rekkefolge=()
-### Tekststrenger
-declare FEILTEKST=""
-declare byggprofil=""
-declare logg="/tmp/akr-bygg.log"
-declare applikasjonerDOTCFG=""
-declare applikasjonsvalg=
+declare -A options
+declare -a error_list=()
+declare -a order=()
+declare -a applications_from_cli=()
+declare -a applications_from_conf=()
+declare -a application_difference=()
+### Strings
+declare ERROR_MSG=""
+declare build_profile=""
+declare log=""
+declare applications_dot_cfg=""
+declare chosen_applications=
 declare path=.
-### Heltall
-declare -i STARTTID=$SECONDS
-declare -i maks_terminalbredde=120
-declare -i min_terminalbredde=60
-declare -i terminalbredde=$(tput cols)
-declare -i flagglengde=25
-declare -i diverse_tekstgrumslengde=8
-declare -i feilcount=0
-declare -i byggcount=0
-### Boolean emulator
+declare settings_cfg="settings.cfg"
+declare mvn_dist_home="${HOME}/.mvn-dist"
+### Integers
+declare -i START_TIME=$SECONDS
+declare -i terminal_width
+declare -i flag_length=25
+declare -i miscellaneous_text_length=8
+declare -i error_count=0
+declare -i build_count=0
+### Boolean Simulator
 declare -i verbose=0
 declare -i force=0
 declare -i continue=0
-declare -i splitt_logg=0
-declare -i dropp_notifikasjon=0
+declare -i split_log=0
+declare -i skip_notification=0
 
-### Finn ut hvor scriptet kjøres fra
-finn_working_directory() {
-    WD="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-}
+MVN_DIST_LOG=""
+MAX_TERMINAL_WIDTH=
+MIN_TERMINAL_WIDTH=
 
-### Sjekk om applikasjoner.cfg er tilgjengelig fra $HOME
-se_etter_cfg() {
-    if [ -d $HOME/.build-akr ]; then
-        if [ ! -e $HOME/.build-akr/applikasjoner.cfg ]; then
-            cp "${WD}"/"applikasjoner.cfg" $HOME/.build-akr
-        fi
-    else
-        mkdir $HOME/.build-akr
-        cp "${WD}"/"applikasjoner.cfg" $HOME/.build-akr
-    fi
-
-    applikasjonerDOTCFG="$HOME/.build-akr/applikasjoner.cfg"
-}
-
-### Les applikasjoner.cfg, deklarer som array
-parse_applikasjoner_fra_config() {
-    applikasjoner_fra_config=()
-    while read -r linje || [[ -n "${linje}" ]]; do
-        lest_linje=$(printf "${linje}" | sed "s/#.*$//" | xargs)
-        if [ "${lest_linje}" != "" ]; then
-            applikasjoner_fra_config+=( "${lest_linje}" )
-        fi
-    done < "${applikasjonerDOTCFG}"
-    declare -a applikasjoner_fra_config
-}
-
-### Hjelpefunksjon for oppsett av formattering
-kalkuler_terminalstorrelse() {
-    terminalbredde=$([ ${terminalbredde} -le ${maks_terminalbredde} ] && printf ${terminalbredde} || printf ${maks_terminalbredde})
-    if [ ${terminalbredde} -lt ${min_terminalbredde} ]; then
-        printf "Terminalen må være minimum %i kolonner bred for å gi feedback i et fornuftig format..." "${min_terminalbredde}"
-        exit 1;
-    fi
-}
-
-### Skriv ut options-delsen av usage()
-skriv_ut_options() {
-    ### OPTIONS skal autogenereres
-    OPTIONS=(
-                ["-P, --profile"]="Alternativer: it, jrebel"
-                ["-p, --path=/sti/til/akr"]="Filsti til mappen som inneholder akr-applikasjonene"
-                ["-a, --applikasjoner"]="Navn på applikasjoner som skal bygges, kommaseparert"
-                ["-f, --force"]="Tving scriptet til å forsøke å bygge applikasjoner angitt med -a|--applikasjoner i valgt rekkefølge. Dette støtter også custom-navn på mappene"
-                ["-s, --skip-tests"]="Ikke kjør tester"
-                ["-c, --continue-on-error"]="Fortsett bygg av neste applikasjon ved kompileringsfeil"
-                ["-l, --split-logs"]="Splitt bygglogg. Én logg per applikasjon. Hendig ved bruk av -c|--continue-on-error dersom en kompileringsfeil oppstår"
-                ["-v, --verbose"]="Full maven output"
-                ["-h, --help"]="Denne hjelpesiden"
-                ["-n, --do-not-disturb"]="Ikke gi forstyrr når bygget er ferdig"
-    )
-
-    flagglengde=25
-    for i in "${!OPTIONS[@]}"; do
-        printf "%-${flagglengde}s" "${i}"
-        width=$(( $terminalbredde - ${flagglengde} ))
-        while read -r -d " " ord || [[ -n "${ord}" ]]; do
-            if [[ $(( ${#ord} + 1 )) -lt ${width} ]]; then
-                printf "%s " "${ord}"
-                width=$(( $width - ${#ord} - 1 ))
-            else
-                printf "\\n%-${flagglengde}s%s " " " "${ord}"
-                width=$(( $terminalbredde - $flagglengde - ${#ord} ))
-            fi
-        done <<< "${OPTIONS[${i}]}"
-        printf "\\n\\n"
-    done
-}
-
-### Tekststrenger
-### Generell tekst til ymse bruk
-INGEN_FARGE="\e[0m"
-ROD="\e[0;031m"
-GRONN="\e[0;32m"
-BLAA="\e[96m"
+### Strings
+NO_COLOUR="\e[0m"
+RED="\e[0;031m"
+GREEN="\e[0;32m"
+BLUE="\e[96m"
 BOLD="\e[1m"
 BLINK="\e[5m"
 
-UKJENT_PROFIL="Ukjent maven-profil. Gyldige parametere: it, jrebel og excludeConfigServer."
-BYGG_FEILET="Bygg feilet. Se /tmp/akr[-applikasjon]-bygg.log for flere detaljer."
-RETTIGHETER="Kunne ikke bytte filsti til gitt applikasjon. Sjekk rettigheter."
-IKKE_FUNNET="Applikasjonsmappen ser ikke ut til å eksistere under angitt filsti. "
-UGYLDIG_FILSTI="Vennligst angi en gyldig filsti til mappen med AKR. Angitt path ser ikke ut til å eksistere."
-INGEN_APPLIKASJONER="Ingen applikasjoner angitt. Dropp -f|--force eller angi hvilke applikasjoner som skal bygges."
+UNKNOWN_PROFILE="Unknown maven profile. Please refer to profiles.cfg for valid options."
+BUILD_FAILURE="Build failure. Please check the logs for further details."
+PERMISSIONS="Unable to access specified directory. Please check the permisions."
+NOT_FOUND="Could not find specified application folder."
+INVALID_PATH="Could not find specified directory. Please validate specified options."
+NO_APPLICATIONS="Could not find any applications to process. Skip -f|--force to build default applications from applications.cfg."
 
 ### Tekststreng for bruk av scriptet - typisk usage()
 read -r -d '' BRUK << EOM
 
 Bygger AKR-applikasjoner i angitt filsti eller nåværende mappe. Logger til\\n/tmp/akr-bygg.log eller /tmp/<akr-applikasjon>-bygg.log og /tmp/akr-bygg-error.log
 
-${GRONN}Usage:${INGEN_FARGE}
+${GREEN}Usage:${NO_COLOUR}
 bob build-akr [options]
 
-${GRONN}Options:${INGEN_FARGE}
-$(skriv_ut_options)
+${GREEN}Options:${NO_COLOUR}
+$(display_options)
 
-${GRONN}Eksempler:${INGEN_FARGE}
+${GREEN}Eksempler:${NO_COLOUR}
 Bygg alle akr-applikasjoner under /mnt/data/git/
-${BLAA}bob build-akr -p /mnt/data/git${INGEN_FARGE}
+${BLUE}bob build-akr -p /mnt/data/git${NO_COLOUR}
 
 Bygg alle akr-applikasjoner i nåværende mappe med integrasjonstester
-${BLAA}bob build-akr -P it${INGEN_FARGE}
+${BLUE}bob build-akr -P it${NO_COLOUR}
 
 Bygg kun akr-modell uten tester
-${BLAA}bob build-akr --skip-tests -a akr-modell${INGEN_FARGE}
+${BLUE}bob build-akr --skip-tests -a akr-modell${NO_COLOUR}
 
 Bygg akr-modell,akr-common og akr-sak i valgt rekkefølge
-${BLAA}bob build-akr -a akr-modell,akr-common,akr-sak -f${INGEN_FARGE}
+${BLUE}bob build-akr -a akr-modell,akr-common,akr-sak -f${NO_COLOUR}
 
 Bygg en applikasjon med custom-navn
-${BLAA}bob build-akr -a akr-omniapplikasjon -f${INGEN_FARGE}
+${BLUE}bob build-akr -a akr-omniapplikasjon -f${NO_COLOUR}
 
-Bygg  alle applikasjoner under /mnt/data/git med integrasjonstester,\\nfortsett bygg av neste applikasjon ved feil og logg til separate filer
-${BLAA}bob build-akr -p /mnt/data/git -P it -c -l${INGEN_FARGE}
+Bygg  alle applikasjoner under /mnt/data/git med integrasjonstester,\\nfortsett bygg av neste applikasjon ved feil og log til separate filer
+${BLUE}bob build-akr -p /mnt/data/git -P it -c -l${NO_COLOUR}
 
-${GRONN}Tips:${INGEN_FARGE}
+${GREEN}Tips:${NO_COLOUR}
 Bruk kortversjonen av flagg ved behov for tab completion\\n
 Dersom man benytter --continue-on-error eller -c så anbefales det å splitte byggloggene ved hjelp av --split-logs eller -l\\n
-Dersom man savner noen applikasjoner kan de legges til i /home/vagrant/.build-akr/applikasjoner.cfg
+Dersom man savner noen applikasjoner kan de legges til i /home/vagrant/.mvn-dist/applications.cfg
 
-${GRONN}Kjente feil:${INGEN_FARGE}
-Tekstfilen /home/vagrant/.build-akr/applikasjoner.cfg MÅ redigeres i Unix grunnet newline-utfordringene\\ntil Microsoft. Rekkefølgen i nevnte fil blir default\\n
+${GREEN}Kjente feil:${NO_COLOUR}
+Tekstfilen /home/vagrant/.mvn-dist/applications.cfg MÅ redigeres i Unix grunnet newline-utfordringene\\ntil Microsoft. Rekkefølgen i nevnte fil blir default\\n
 Formattering av output fungerer best i terminal som har >= 80 kolonner bredde
 
-${GRONN}Konfigurasjonsfiler:${INGEN_FARGE}
-/home/vagrant/.build-akr/applikasjoner.cfg\\n\\n
+${GREEN}Konfigurasjonsfiler:${NO_COLOUR}
+/home/vagrant/.mvn-dist/applications.cfg\\n\\n
 EOM
 
 ### So shoot me - et påskeegg
@@ -191,133 +127,208 @@ read -r -d '' FIX << EOA
 
 EOA
 
-### Layout-funksjoner
-flytt_cursor_opp() {
+
+### Get working directory
+get_pwd() {
+    WD="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+}
+
+### Check if applications.cfg is available in $HOME
+look_for_cfg() {
+    if [[ -d "${mvn_dist_home}" ]]; then
+        if [[ ! -e "${mvn_dist_home}/applications.cfg" ]]; then
+            cp "${WD}/applications.cfg" "${mvn_dist_home}"
+        fi
+    else
+        mkdir "${mvn_dist_home}"
+        cp "${WD}/applications.cfg" "${mvn_dist_home}"
+    fi
+
+    applications_dot_cfg="${mvn_dist_home}/applications.cfg"
+}
+
+### Read applications.cfg, declare as an array
+parse_applications_from_config() {
+    applications_from_config=()
+    while read -r linje || [[ -n "${linje}" ]]; do
+        lest_linje=$(printf "%s", "${linje}" | sed "s/#.*$//" | xargs)
+        if [[ "${lest_linje}" != "" ]]; then
+            applications_from_config+=( "${lest_linje}" )
+        fi
+    done < "${applications_dot_cfg}"
+    declare -a applications_from_config
+}
+
+read_settings_cfg() {
+  while read -r linje || [[ -n "${linje}" ]]; do
+    export linje
+  done < "${settings_cfg}"
+}
+
+### Utility for formatting output
+calc_terminal_size() {
+    terminal_width=$(tput cols)
+    terminal_width=$([[ "${terminal_width}" -le "${MAX_TERMINAL_WIDTH}" ]] && printf "%s", "${terminal_width}" || printf "%s", "${MAX_TERMINAL_WIDTH}")
+    if [[ "${terminal_width}" -lt "${MIN_TERMINAL_WIDTH}" ]]; then
+        printf "Terminalen må være minimum %i kolonner bred for å gi feedback i et fornuftig format..." "${MIN_TERMINAL_WIDTH}"
+        exit 1;
+    fi
+}
+
+### Options
+display_options() {
+    options=(
+                ["-P, --profile"]="Alternativer: it, jrebel"
+                ["-p, --path=/sti/til/akr"]="Filsti til mappen som inneholder akr-applikasjonene"
+                ["-a, --applikasjoner"]="Navn på applikasjoner som skal bygges, kommaseparert"
+                ["-f, --force"]="Tving scriptet til å forsøke å bygge applikasjoner angitt med -a|--applikasjoner i valgt rekkefølge. Dette støtter også custom-navn på mappene"
+                ["-s, --skip-tests"]="Ikke kjør tester"
+                ["-c, --continue-on-error"]="Fortsett bygg av neste applikasjon ved kompileringsfeil"
+                ["-l, --split-logs"]="Splitt bygglogg. Én log per applikasjon. Hendig ved bruk av -c|--continue-on-error dersom en kompileringsfeil oppstår"
+                ["-v, --verbose"]="Full maven output"
+                ["-h, --help"]="Denne hjelpesiden"
+                ["-n, --do-not-disturb"]="Ikke gi forstyrr når bygget er ferdig"
+    )
+
+    flag_length=25
+    for i in "${!options[@]}"; do
+        printf "%-${flag_length}s" "${i}"
+        width=$(( terminal_width - flag_length ))
+        while read -r -d " " ord || [[ -n "${ord}" ]]; do
+            if [[ $(( ${#ord} + 1 )) -lt ${width} ]]; then
+                printf "%s " "${ord}"
+                width=$(( width - ${#ord} - 1 ))
+            else
+                printf "\\n%-${flag_length}s%s " " " "${ord}"
+                width=$(( terminal_width - flag_length - ${#ord} ))
+            fi
+        done <<< "${options[${i}]}"
+        printf "\\n\\n"
+    done
+}
+
+
+### Layout functions
+move_cursor_up() {
     printf "\\033[%qA" "${1}"
 }
 
-flytt_cursor_ned() {
+move_cursor_down() {
     printf "\\033[%qB" "${1}"
 }
 
-flytt_cursor_frem() {
+move_cursor_forward() {
     printf "\\033[%qC" "${1}"
 }
 
-flytt_cursor_tilbake() {
+move_cursor_backward() {
     printf "\\033[%qD" "${1}"
 }
 
-lagre_cursorposisjon() {
+save_cursor_position() {
     printf "\\033[s"
 }
 
-kall_lagret_cursorposisjon() {
+recall_cursor_position() {
     printf "\\033[u"
 }
 
-slett_til_slutten_av_linjen() {
+delete_until_end_of_line() {
     printf "\\033[0K"
 }
-### /Layout-funksjoner
+### /Layout functions
 
-### Generisk metode for å skrive ut advarsler
-skriv_ut_advarsel() {
-    printf "\\n%b*** %s *** %b\\n\\n" "${ROD}" "${1}" "${INGEN_FARGE}"
+### Generic warning function
+print_warning() {
+    printf "\\n%b*** %s *** %b\\n\\n" "${RED}" "${1}" "${NO_COLOUR}"
 }
 
-### Hjelpefunksjon for formattering av tekst
+### Utility function for padding
 pad() {
     lengde=$1
     i=0
-    while [ $i -lt $lengde ]; do
+    while [[ $i -lt "${lengde}" ]]; do
         printf "%s" "*"
         i=$(( i+1 ))
     done
 }
 
-### Oppsummering for Bob
-summary() {
-    bob_bold=$(tput bold)
-    bob_normal=$(tput sgr0)
-    printf "\t%-25s %-80s \n" "${bob_bold}bob build-akr:${bob_normal}" "Hjelpefunksjoner for bygging av akr-applikasjoner";
-}
-
-### Manual/Hjelpeside
+### Manual
 usage() {
     printf "%b" "${BRUK}"
 }
 
-### Deklarerer applikasjonsdifferanse som er forskjellen på forventede og mottatte applikasjoner
-forventede_applikasjoner() {
-    applikasjonsdifferanse=()
+### Parse cli applications.
+parse_applications_from_cli() {
+    IFS=',' read -r -a applications_from_cli <<< "${1}"
 
-    for i in "${!applikasjoner_fra_bruker[@]}"; do
-        skip=
-
-        for j in "${!applikasjoner_fra_config[@]}"; do
-            if [ "${applikasjoner_fra_bruker[${i}]}" == "${applikasjoner_fra_config[${j}]}" ]; then
-                skip=1
-                break
-            fi
-        done
-
-        [[ -n ${skip} ]] || applikasjonsdifferanse+=( "${applikasjoner_fra_bruker[$i]}" )
-
-    done
-
-    declare -a applikasjonsdifferanse
-}
-
-### Sorterer applikasjoner i henhold til rekkefølge i config
-sorter_applikasjoner() {
-
-    for i in "${!applikasjoner_fra_config[@]}"; do
-        for j in "${!applikasjoner_fra_bruker[@]}"; do
-            if [ "${applikasjoner_fra_config[${i}]}" == "${applikasjoner_fra_bruker[${j}]}" ]; then
-                skip=1
-                rekkefolge+=( "${applikasjoner_fra_config[$i]}" )
-                break
-            fi
-        done
-    done
-
-    unset "applikasjoner_fra_config"
-    applikasjoner_fra_config=( "${rekkefolge[@]}" )
-    unset "skal_bygges"
-}
-
-### Parser applikasjoner gitt ved kommandolinjen, sammenligner med kjente applikasjoner
-parse_applikasjoner_fra_cli() {
-    IFS=',' read -r -a applikasjoner_fra_bruker <<< "${1}"
-
-    if [ "${force}" -eq 0 ];then
-        forventede_applikasjoner
-        if [ "${#applikasjonsdifferanse[@]}" -gt 0 ]; then
-            skriv_ut_advarsel "$(printf "Ukjent applikasjon %s" "${applikasjonsdifferanse[*]}")"
+    if [[ "${force}" -eq 0 ]];then
+        expected_applications
+        if [[ "${#application_difference[@]}" -gt 0 ]]; then
+            print_warning "$(printf "Ukjent applikasjon %s" "${application_difference[*]}")"
             exit 1
         fi
 
-        sorter_applikasjoner
+        sort_applications
 
     else
-        if [ "${#applikasjoner_fra_bruker[@]}" -gt 0 ]; then
-            unset "applikasjoner_fra_config"
-            applikasjoner_fra_config=( "${applikasjoner_fra_bruker[@]}" )
+        if [[ "${#applications_from_cli[@]}" -gt 0 ]]; then
+            unset "applications_from_config"
+            applications_from_config=( "${applications_from_cli[@]}" )
         else
-            skriv_ut_advarsel "${INGEN_APPLIKASJONER}"
+            print_warning "${NO_APPLICATIONS}"
             exit 1
         fi
     fi
 }
 
-### Gjør formatet mer leselig ved lange mappenavn
-trunker_applikasjonsnavn() {
+
+### Declare difference between expected and actual applications as an array
+expected_applications() {
+    application_difference=()
+
+    for i in "${!applications_from_cli[@]}"; do
+        skip=
+
+        for j in "${!applications_from_config[@]}"; do
+            if [[ "${applications_from_cli[${i}]}" == "${applications_from_config[${j}]}" ]]; then
+                skip=1
+                break
+            fi
+        done
+
+        [[ -n ${skip} ]] || application_difference+=( "${applications_from_cli[$i]}" )
+
+    done
+
+    declare -a application_difference
+}
+
+### Sort applications. Uses the applications.cfg order.
+sort_applications() {
+
+    for i in "${!applications_from_config[@]}"; do
+        for j in "${!applications_from_cli[@]}"; do
+            if [[ "${applications_from_config[${i}]}" == "${applications_from_cli[${j}]}" ]]; then
+                skip=1
+                order+=( "${applications_from_config[$i]}" )
+                break
+            fi
+        done
+    done
+
+    unset "applications_from_config"
+    applications_from_config=( "${order[@]}" )
+    unset "skal_bygges"
+}
+
+### Utility function for displaying output.
+truncate_application_name() {
     testtekstlengde=${2}
     applikasjon=${1}
-    maks_lengde=$(( ${terminalbredde} - $(( ${testtekstlengde} + 6 )) ))
+    maks_lengde=$(( terminal_width - $(( testtekstlengde + 6 )) ))
     if [[ ${maks_lengde} -lt 3 ]]; then
-        printf "Terminalen er for smal til å gi fornuftig output. Resize til minimum ${min_terminalbredde} kolonner og prøv igjen.\\n"
+        printf "Terminalen er for smal til å gi fornuftig output. Resize til minimum %s kolonner og prøv igjen.\\n", "${MIN_TERMINAL_WIDTH}"
         exit 1
     elif [[ ${maks_lengde} -gt ${#applikasjon} ]]; then
         export pretty_print="${applikasjon}"
@@ -326,218 +337,209 @@ trunker_applikasjonsnavn() {
     fi
 }
 
-### Spinn-funksjonalitet
-spinn_cursor() {
+### Spin functionality
+spin_cursor() {
     pid=$1
-    spinn="-\|/"
+    spin="-\|/"
     i=0
-    app=$4
-    pretty=$6
-    testString=$5
+    app=$2
+    pretty=$4
+    test_string=$3
 
-    flytt_cursor_frem $(( $terminalbredde - $(( ${#pretty} + ${#testString} + ${diverse_tekstgrumslengde} )) ))
-    printf "%b" "${GRONN}"
-    printf "%s" "${spinn:$i:1}"
+    move_cursor_forward $(( terminal_width - $(( ${#pretty} + ${#test_string} + miscellaneous_text_length )) ))
+    printf "%b" "${GREEN}"
+    printf "%s" "${spin:$i:1}"
 
-    ### Sjekk om maven fortsatt bygger, spinn
+    ### Check if still building, spin
     while kill -0 "${pid}" 2>/dev/null
     do
         i=$(( (i+1) %4 ))
-        flytt_cursor_tilbake 1
-	    printf "%s" "${spinn:${i}:1}"
+        move_cursor_backward 1
+	    printf "%s" "${spin:${i}:1}"
         sleep .1
     done
 
-    printf "%b" "${INGEN_FARGE}"
+    printf "%b" "${NO_COLOUR}"
     wait "${pid}"
 
-    ### Sjekk om bygget feiler, skriv ut advarsel og eventuelt avslutt
-    if [ $? -ne 0 ]; then
-        flytt_cursor_tilbake 2
-        slett_til_slutten_av_linjen
-        printf "%b%s%b" "${ROD}${BLINK}${BOLD}" "!!" "${INGEN_FARGE}\\n"
+    ### check if build failed
+    if [[ $? -ne 0 ]]; then
+        move_cursor_backward 2
+        delete_until_end_of_line
+        printf "%b%s%b" "${RED}${BLINK}${BOLD}" "!!" "${NO_COLOUR}\\n"
 
-        if [ $continue -ne 1 ]; then
+        if [[ "${continue}" -ne 1 ]]; then
             printf "\\n\\n"
-            tail -n 400 "${logg}"
-            skriv_ut_advarsel "${BYGG_FEILET}" && exit 1
+            tail -n 400 "${log}"
+            print_warning "${BUILD_FAILURE}" && exit 1
         else
-            feilliste[$feilcount]="\\n\\nApplikasjon:\\t${app}\nLogg:\\t\\t${BOLD}${BLAA}${logg}${INGEN_FARGE}"
-            feilcount=$(( feilcount+1 ))
+            error_list[$error_count]="\\n\\nApplikasjon:\\t${app}\nLogg:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
+            error_count=$(( error_count+1 ))
         fi
 
     else
-        flytt_cursor_tilbake 2
-        slett_til_slutten_av_linjen
-        printf "%b%s%b" "${GRONN}${BOLD}" "OK" "${INGEN_FARGE}\\n"
+        move_cursor_backward 2
+        delete_until_end_of_line
+        printf "%b%s%b" "${GREEN}${BOLD}" "OK" "${NO_COLOUR}\\n"
     fi
 
 }
 
-### Tekststrenger som omhandler tid brukt på bygg. Vis/ikke vis osv...
-beregn_tid() {
-    TID_BRUKT=$(( SECONDS - STARTTID))
+### Strings for displaying time spent.
+calc_time_spent() {
+    TID_BRUKT=$(( SECONDS - START_TIME))
     MINUTTER=$(( TID_BRUKT / 60 ))
     SEKUNDER=$(( TID_BRUKT % 60 ))
 
-    if [ ${SEKUNDER} -eq 1 ]; then
+    if [[ ${SEKUNDER} -eq 1 ]]; then
         SEKUND_STRENG="1 sekund"
-    elif [ ${SEKUNDER} -gt 1 ];then
+    elif [[ ${SEKUNDER} -gt 1 ]];then
         SEKUND_STRENG="${SEKUNDER} sekunder"
     fi
 
-    if [ ${MINUTTER} -eq 1 ]; then
+    if [[ ${MINUTTER} -eq 1 ]]; then
         MINUTT_STRENG="1 minutt"
-    elif [ ${MINUTTER} -gt 1 ];then
+    elif [[ ${MINUTTER} -gt 1 ]];then
         MINUTT_STRENG="${MINUTTER} minutter"
     fi
 
     [[ -n ${SEKUND_STRENG} && -n ${MINUTT_STRENG} ]] && MINUTT_STRENG="${MINUTT_STRENG} og "
 }
 
-### Selve options-parsingen. Gi variablene korrekte verdier i henhold til flagg og parametere
-parse_options_og_gi_initielle_variabler_angitte_verdier() {
-    options=$(getopt -o "sa:vzchfblnp:P:" -l "skip-tests,summary,fix-bugs,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applikasjoner:,help" -- "$@")
+### Parse options, assign values to variables.
+parse_options_and_initalize_values() {
+    options=$(getopt -o "sa:vzchfblnp:P:" -l "skip-tests,fix-bugs,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applikasjoner:,help" -- "$@")
     eval set -- "${options}"
 
-    while [ $# -gt 0 ]; do
+    while [[ $# -gt 0 ]]; do
         case "$1" in
-            -a|--applikasjoner) applikasjonsvalg="${2}" ; shift 2 ;;
+            -a|--applikasjoner) chosen_applications="${2}" ; shift 2 ;;
             -P|--profile)
                     case "$2" in
-                        jrebel) byggprofil="-Pjrebel" ; shift 2 ;;
-                        it) byggprofil="-Pit" ; shift 2 ;;
-                        *) skriv_ut_advarsel "${UKJENT_PROFIL}" && exit 1 ;;
+                        jrebel) build_profile="-Pjrebel" ; shift 2 ;;
+                        it) build_profile="-Pit" ; shift 2 ;;
+                        *) print_warning "${UNKNOWN_PROFILE}" && exit 1 ;;
                     esac ;;
             -f|--force) force=1 ; shift ;;
-            -n|--do-not-disturb) dropp_notifikasjon=1 ; shift ;;
+            -n|--do-not-disturb) skip_notification=1 ; shift ;;
             -s|--skip-tests) skip_tester="-DskipTests" ; shift ;;
             -p|--path) path="${2}" ; shift 2 ;;
-            -l|--split-logs) splitt_logg=1 ; shift ;;
+            -l|--split-logs) split_log=1 ; shift ;;
             -c|--continue-on-error) continue=1 ; shift ;;
             -b|--fix-bugs) printf "%b" "${FIX}" && exit 0 ;;
             -v|--verbose) verbose=1 ; shift ;;
             -h|--help) usage && exit 0 ;;
-            -z|--summary) summary && exit 0 ;;
             --) shift ; break ;;
             *) printf "%s" "$0: feil - ukjent flagg - prøv igjen $1" 1>&2; exit 1 ;;
         esac
     done
 }
 
-### Lagre cursor-posisjon i starten av linjen
-sett_utgangspunkt_for_cursor_kalkulering() {
+### Save cursor position at the beginning of the line
+initalize_cursor_position() {
     printf "\\n"
-    lagre_cursorposisjon
+    save_cursor_position
 }
 
-### Avgjør hvorvidt man har fått inn applikasjoner som skal bygges via cli
-sjekk_om_applikasjoner_fra_cli_skal_parses() {
-    ### Parse applikasjoner fra cli om nødvendig
-    [[ -n "${applikasjonsvalg}" ]] && parse_applikasjoner_fra_cli "${applikasjonsvalg}"
+### Check if we have received applications from cli.
+application_parsed_from_cli() {
+    ### Parse applications from cli if necessary
+    [[ -n "${chosen_applications}" ]] && parse_applications_from_cli "${chosen_applications}"
 }
 
-### Sjekk om angitt filsti til akr eksisterer, magisk slash-funksjonalitet
-sjekk_om_mappe_til_akr_eksisterer() {
-    if [ -d "${path}" ]; then
-        cd "${path}"
-        absolutt_path=$(pwd)
-    else
-        skriv_ut_advarsel "${UGYLDIG_FILSTI}"
-        exit 1
-    fi
+### Check for existence of application directory. Magic slash functionality.
+application_folder_exists() {
+  cd "${path}" && absolutt_path="$(pwd)" || print_warning "${INVALID_PATH}" && exit 1
 }
 
-### Bygg hver angitte applikasjon/alle applikasjoner
-bygg_angitte_eller_alle_applikasjoner() {
-    for i in "${!applikasjoner_fra_config[@]}"; do
-        [[ ${byggprofil} == "-Pit" && "${skip_tester}" != "-DskipTests" ]] && test_string=" med integrasjonstester" || test_string=""
-        aktuell_applikasjon="${absolutt_path}"/"${applikasjoner_fra_config[$i]}"
+### Build applications.
+build_applications() {
+    for i in "${!applications_from_config[@]}"; do
+        [[ ${build_profile} == "-Pit" && "${skip_tester}" != "-DskipTests" ]] && test_string=" med integrasjonstester" || test_string=""
+        application="${absolutt_path}"/"${applications_from_config[$i]}"
 
-        byggtekst=$(printf "* Bygg ${test_string}")
-        trunker_applikasjonsnavn ${applikasjoner_fra_config[$i]} ${#byggtekst}
+        byggtekst=$(printf "* Bygg %s", "${test_string}")
+        truncate_application_name "${applications_from_config[$i]}" "${#byggtekst}"
 
-        if [ $splitt_logg -eq 1 ]; then
-            logg="/tmp/"${applikasjoner_fra_config[$i]}"-bygg.log"
+        if [[ "${split_log}" -eq 1 ]]; then
+            log="/tmp/${applications_from_config[$i]}-bygg.log"
         fi
 
-        ### Sjekk om gitt applikasjonsmappe eksisterer
-        if [ -d  "${aktuell_applikasjon}" ]; then
+        ### Check if application directory exists
+        if [[ -d  "${application}" ]]; then
 
-            ### Dersom man herfra i scriptet ikke kan gå til mappen er det sannsynligvis et problem med rettigheter
-            cd "${aktuell_applikasjon}" || (skriv_ut_advarsel "${RETTIGHETER}"; exit 1)
+            ### If we cannot enter the folder at this stage, permissions are the usual suspects.
+            cd "${application}" || (print_warning "${PERMISSIONS}"; exit 1)
 
-            ### Skjul output om verbose ikke er valgt, vis spinner istedet
-            if [ ${verbose} -eq 0 ]; then
-                printf "* Bygg %b%s%b%s" "${GRONN}" "${pretty_print}" "${INGEN_FARGE}" "${test_string}"
-                mvn clean install ${byggprofil} ${skip_tester} 2> >(tee /tmp/akr-bygg-error.log >&2) &>"${logg}" & pid=$!
-                spinn_cursor "${pid}" "${aktuell_applikasjon}" "${i}" "${applikasjoner_fra_config[$i]}" "${test_string}" "${pretty_print}"
+            ### Spinner or full maven output
+            if [[ "${verbose}" -eq 0 ]]; then
+                printf "* Bygg %b%s%b%s" "${GREEN}" "${pretty_print}" "${NO_COLOUR}" "${test_string}"
+                mvn clean install ${build_profile} ${skip_tester} 2> >(tee /tmp/akr-bygg-error.log >&2) &>"${log}" & pid=$!
+                spin_cursor "${pid}" "${applications_from_config[$i]}" "${test_string}" "${pretty_print}"
             else
-                mvn clean install ${byggprofil} ${skip_tester} > >(tee "${logg}" 2> >(tee /tmp/akr-bygg-error.log >&2)) & pid=$!
+                mvn clean install ${build_profile} ${skip_tester} > >(tee "${log}" 2> >(tee /tmp/akr-bygg-error.log >&2)) & pid=$!
                 wait "${pid}"
-                if [ $? -ne 0 ]; then
-                    if [ $continue -ne 1 ]; then
-                        skriv_ut_advarsel "${BYGG_FEILET}" && exit 1
+                if [[ $? -ne 0 ]]; then
+                    if [[ "${continue}" -ne 1 ]]; then
+                        print_warning "${BUILD_FAILURE}" && exit 1
                     else
-                        feilliste[$feilcount]="\\n\\nApplikasjon:\\t${applikasjoner_fra_config[$i]}\nLogg:\\t\\t${BOLD}${BLAA}${logg}${INGEN_FARGE}"
-                        feilcount=$(( feilcount+1 ))
+                        error_list["{$error_count}"]="\\n\\nApplikasjon:\\t${applications_from_config[$i]}\nLogg:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
+                        error_count=$(( error_count+1 ))
                     fi
                 fi
             fi
-            byggcount=$(( $byggcount + 1 ))
+            build_count=$(( build_count + 1 ))
         else
-            printf "* Mislyktes med bygging av %s" "${applikasjoner_fra_config[${i}]}"
-            skriv_ut_advarsel "${IKKE_FUNNET}"
+            printf "* Mislyktes med bygging av %s" "${applications_from_config[${i}]}"
+            print_warning "${NOT_FOUND}"
         fi
-
     done
-
 }
 
-### Lager en feilmelding ved behov
-bygg_opp_feilmelding() {
-    if [ ${feilcount} -gt 0 ]; then
+### Generates error message(s)
+generate_error_message() {
+    if [[ ${error_count} -gt 0 ]]; then
         printf "\\n\\n"
         feil="Byggfeil"
-        padlengde=$(( ($terminalbredde / 2) -  (${#feil} / 2) - 1 ))
-        pad $padlengde
-        printf " %b " "${ROD}${BOLD}${feil}${INGEN_FARGE}"
-        pad $padlengde
-        for i in "${!feilliste[@]}"; do
-            printf "%b" "${feilliste[$i]}"
+        padlengde=$(( (terminal_width / 2) -  (${#feil} / 2) - 1 ))
+        pad "${padlengde}"
+        printf " %b " "${RED}${BOLD}${feil}${NO_COLOUR}"
+        pad "${padlengde}"
+        for i in "${!error_list[@]}"; do
+            printf "%b" "${error_list[$i]}"
         done
         printf "\\n\\n"
-        pad $terminalbredde
+        pad "{$terminal_width}"
         printf "\\n"
-        FEILTEKST=" med ${ROD}${BOLD}${feilcount} feil${INGEN_FARGE}..."
+        ERROR_MSG=" med ${RED}${BOLD}${error_count} feil${NO_COLOUR}..."
     fi
 }
 
-### Skriver ut oppsumeringstekst
-skriv_ut_oppsummering_av_bygg() {
-    if [ ${byggcount} -gt 0 ]; then
-        ### Skriv ut potensiell gladmelding
-        command -v notify-send > /dev/null 2>&1 && ([[ ${dropp_notifikasjon} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Bygg Ferdig" "Bygget tok\\n<i>${MINUTT_STRENG}${SEKUND_STRENG}</i>")
-        command -v osascript > /dev/null 2>&1 && ([[ ${dropp_notifikasjon} -eq 0 ]] && osascript -e "display notification \"Bygget tok ${MINUTT_STRENG}${SEKUND_STRENG}\" with title \"Bygg Ferdig\"")
-        printf "%b%b%s%b%b" "\n\n" "${GRONN}${BOLD}" "Bygg ferdig" "${INGEN_FARGE}" " etter ${MINUTT_STRENG}${SEKUND_STRENG}${FEILTEKST}\\n\\n"
+### Summarize
+display_summary() {
+    if [[ "${build_count}" -gt 0 ]]; then
+        command -v notify-send > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Bygg Ferdig" "Bygget tok\\n<i>${MINUTT_STRENG}${SEKUND_STRENG}</i>")
+        command -v osascript > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && osascript -e "display notification \"Bygget tok ${MINUTT_STRENG}${SEKUND_STRENG}\" with title \"Bygg Ferdig\"")
+        printf "%b%b%s%b%b" "\n\n" "${GREEN}${BOLD}" "Bygg ferdig" "${NO_COLOUR}" " etter ${MINUTT_STRENG}${SEKUND_STRENG}${ERROR_MSG}\\n\\n"
     else
-        command -v notify-send > /dev/null 2>&1 && [[ ${dropp_notifikasjon} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Ferdig" "Fant ingenting å  bygge"
-        command -v osascript > /dev/null 2>&1 && ([[ ${dropp_notifikasjon} -eq 0 ]] && osascript -e "display notification \"Fant ingenting å bygge...\" with title \"Bygg Ferdig\"")
+        command -v notify-send > /dev/null 2>&1 && [[ ${skip_notification} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Ferdig" "Fant ingenting å  bygge"
+        command -v osascript > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && osascript -e "display notification \"Fant ingenting å bygge...\" with title \"Bygg Ferdig\"")
         printf "Fant ingenting å gjøre. Ingen applikasjoner ble bygd.\\n\\n"
     fi
 }
 
 #### Start script
-kalkuler_terminalstorrelse
-finn_working_directory
-se_etter_cfg
-parse_applikasjoner_fra_config
-parse_options_og_gi_initielle_variabler_angitte_verdier "$@"
-sett_utgangspunkt_for_cursor_kalkulering
-sjekk_om_applikasjoner_fra_cli_skal_parses
-sjekk_om_mappe_til_akr_eksisterer
-bygg_angitte_eller_alle_applikasjoner
-bygg_opp_feilmelding
-beregn_tid
-skriv_ut_oppsummering_av_bygg
-### Slutt script
+read_settings_cfg
+calc_terminal_size
+get_pwd
+look_for_cfg
+parse_applications_from_config
+parse_options_and_initalize_values "$@"
+initalize_cursor_position
+application_parsed_from_cli
+application_folder_exists
+build_applications
+generate_error_message
+calc_time_spent
+display_summary
+### End script
