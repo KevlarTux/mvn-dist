@@ -3,7 +3,7 @@
 ## TODO: skipModules --> bris-frontend:!bris-frontend-frontend # Exclude
 ## TODO: skipModules --> bris-frontend:bris-frontend-domain # Include only
 
-DEBUG=1
+DEBUG=0
 ### Arrays
 declare -A options
 declare -a error_list=()
@@ -17,6 +17,8 @@ declare build_profile=""
 declare log="/tmp/mvn-dist.log"
 declare chosen_applications=
 declare path=.
+declare application_path=""
+declare application=""
 declare applications_cfg="applications.cfg"
 declare settings_cfg="settings.cfg"
 declare mvn_dist_home="${HOME}/.mvn-dist"
@@ -342,29 +344,24 @@ sort_applications() {
 
 ### Utility function for displaying output.
 truncate_application_name() {
-    text_string_length=${2}
-    app=${1}
-    max_length=$(( terminal_width - $(( text_string_length + 6 )) ))
+    max_length=$(( terminal_width - $(( ${#build_text} + 6 )) ))
+
     if [[ ${max_length} -lt 3 ]]; then
         printf "Terminalen er for smal til å gi fornuftig output. Resize til minimum %s kolonner og prøv igjen.\\n", "${MIN_TERMINAL_WIDTH}"
         exit 1
-    elif [[ ${max_length} -gt ${#app} ]]; then
-        export pretty_print="${app}"
+    elif [[ ${max_length} -gt ${#application} ]]; then
+        pretty_print="${application}"
     else
-        export pretty_print="${app:0:$max_length}..."
+        pretty_print="${application:0:$max_length}..."
     fi
 }
 
 ### Spin functionality
 spin_cursor() {
-    pid=$1
     spin="-\|/"
     i=0
-    app=$2
-    pretty=$4
-    test_string=$3
 
-    move_cursor_forward $(( terminal_width - $(( ${#pretty} + ${#test_string} + miscellaneous_text_length )) ))
+    move_cursor_forward $(( terminal_width - $(( ${#pretty_print} + ${#test_string} + miscellaneous_text_length )) ))
     printf "%b" "${GREEN}"
     printf "%s" "${spin:$i:1}"
 
@@ -391,7 +388,7 @@ spin_cursor() {
             tail -n 400 "${log}"
             print_warning "${BUILD_FAILURE}" && exit 1
         else
-            error_list[$error_count]="\\n\\nApplikasjon:\\t${app}\nLogg:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
+            error_list[$error_count]="\\n\\nApplikasjon:\\t${application}\nLogg:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
             error_count=$(( error_count+1 ))
         fi
 
@@ -479,27 +476,28 @@ application_folder_exists() {
 build_applications() {
     for i in "${!applications_from_config_array[@]}"; do
         [[ ${build_profile} == "-Pit" && "${skip_tester}" != "-DskipTests" ]] && test_string=" with integration tests" || test_string=""
-        app="${absolute_path}/${applications_from_config_array[${i}]}"
+        application="${applications_from_config_array[${i}]}"
+        application_path="${absolute_path}/${application}"
 
         build_text=$(printf "* Build %s" "${test_string}")
-        debug "${applications_from_config_array[${i}]}" "${app}"
-        truncate_application_name "${applications_from_config_array[${i}]}" "${#build_text}"
+        debug "${application}" "${application_path}"
+        truncate_application_name
 
         if [[ "${split_log}" -eq 1 ]]; then
-            log="/tmp/${applications_from_config_array[${i}]}-build.log"
+            log="/tmp/${application}-build.log"
         fi
 
         ### Check if application directory exists
-        if [[ -d  "${app}" ]]; then
+        if [[ -d  "${application_path}" ]]; then
 
             ### If we cannot enter the folder at this stage, permissions are the usual suspects.
-            cd "${app}" || (print_warning "${PERMISSIONS}" && exit 1)
+            cd "${application_path}" || (print_warning "${PERMISSIONS}" && exit 1)
 
             ### Spinner or full maven output
             if [[ "${verbose}" -eq 0 ]]; then
                 printf "* Build %b%s%b%s" "${GREEN}" "${pretty_print}" "${NO_COLOUR}" "${test_string}"
                 mvn clean install ${build_profile} ${skip_tester} 2> >(tee /tmp/mvn-dist-error.log >&2) &>"${log}" & pid=$!
-                spin_cursor "${pid}" "${applications_from_config_array[$i]}" "${test_string}" "${pretty_print}"
+                spin_cursor #"${pid}" "${application}" "${test_string}" "${pretty_print}"
             else
                 mvn clean install ${build_profile} ${skip_tester} > >(tee "${log}" 2> >(tee /tmp/mvn-dist-error.log >&2)) & pid=$!
                 wait "${pid}"
@@ -507,14 +505,14 @@ build_applications() {
                     if [[ "${continue}" -ne 1 ]]; then
                         print_warning "${BUILD_FAILURE}" && exit 1
                     else
-                        error_list["${error_count}"]="\\n\\nApplication:\\t${applications_from_config_array[$i]}\nLog:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
+                        error_list["${error_count}"]="\\n\\nApplication:\\t${application}\nLog:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
                         error_count=$(( error_count+1 ))
                     fi
                 fi
             fi
             build_count=$(( build_count + 1 ))
         else
-            printf "* Build failure: %s" "${applications_from_config_array[${i}]}"
+            printf "* Build failure: %s" "${application}"
             print_warning "${NOT_FOUND}"
         fi
     done
