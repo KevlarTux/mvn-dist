@@ -3,20 +3,21 @@
 ## TODO: skipModules --> bris-frontend:!bris-frontend-frontend # Exclude
 ## TODO: skipModules --> bris-frontend:bris-frontend-domain # Include only
 
+DEBUG=1
 ### Arrays
 declare -A options
 declare -a error_list=()
 declare -a order=()
-declare -a applications_from_cli=()
-declare -a applications_from_conf=()
-declare -a application_difference=()
+declare -a applications_from_cli_array=()
+declare -a applications_from_config_array=()
+declare -a application_difference_array=()
 ### Strings
 declare ERROR_MSG=""
 declare build_profile=""
-declare log=""
-declare applications_dot_cfg=""
+declare log="/tmp/mvn-dist.log"
 declare chosen_applications=
 declare path=.
+declare applications_cfg="applications.cfg"
 declare settings_cfg="settings.cfg"
 declare mvn_dist_home="${HOME}/.mvn-dist"
 ### Integers
@@ -36,6 +37,49 @@ declare -i skip_notification=0
 MVN_DIST_LOG=""
 MAX_TERMINAL_WIDTH=
 MIN_TERMINAL_WIDTH=
+
+# Debug
+debug() {
+    if [[ "${DEBUG}" -eq 1 ]]; then
+        array=( "$@" )
+        for i in "${!array[@]}"; do
+            printf "${array[${i}]}\\n"
+        done
+    fi
+}
+
+### Options
+display_options() {
+    options=(
+                ["-P, --profile"]="Alternativer: it, jrebel"
+                ["-p, --path=/sti/til/akr"]="Filsti til mappen som inneholder akr-applikasjonene"
+                ["-a, --applikasjoner"]="Navn på applikasjoner som skal bygges, kommaseparert"
+                ["-f, --force"]="Tving scriptet til å forsøke å bygge applikasjoner angitt med -a|--applikasjoner i valgt rekkefølge. Dette støtter også custom-navn på mappene"
+                ["-s, --skip-tests"]="Ikke kjør tester"
+                ["-c, --continue-on-error"]="Fortsett bygg av neste applikasjon ved kompileringsfeil"
+                ["-l, --split-logs"]="Splitt bygglogg. Én log per applikasjon. Hendig ved bruk av -c|--continue-on-error dersom en kompileringsfeil oppstår"
+                ["-v, --verbose"]="Full maven output"
+                ["-h, --help"]="Denne hjelpesiden"
+                ["-n, --do-not-disturb"]="Ikke gi forstyrr når bygget er ferdig"
+    )
+
+    flag_length=25
+    for i in "${!options[@]}"; do
+        printf "%-${flag_length}s" "${i}"
+        width=$(( terminal_width - flag_length ))
+        while read -r -d " " ord || [[ -n "${ord}" ]]; do
+            if [[ $(( ${#ord} + 1 )) -lt ${width} ]]; then
+                printf "%s " "${ord}"
+                width=$(( width - ${#ord} - 1 ))
+            else
+                printf "\\n%-${flag_length}s%s " " " "${ord}"
+                width=$(( terminal_width - flag_length - ${#ord} ))
+            fi
+        done <<< "${options[${i}]}"
+        printf "\\n\\n"
+    done
+}
+
 
 ### Strings
 NO_COLOUR="\e[0m"
@@ -129,84 +173,58 @@ EOA
 
 
 ### Get working directory
-get_pwd() {
+get_mvn_installation_home() {
+    debug 1
+    path=$(pwd)
     WD="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 }
 
 ### Check if applications.cfg is available in $HOME
+# TODO: Split if
 look_for_cfg() {
+debug 2
     if [[ -d "${mvn_dist_home}" ]]; then
-        if [[ ! -e "${mvn_dist_home}/applications.cfg" ]]; then
-            cp "${WD}/applications.cfg" "${mvn_dist_home}"
+        if [[ ! -e "${mvn_dist_home}/${applications_cfg}" && ! -e "${mvn_dist_home}/${settings_cfg}" ]]; then
+            cp "${WD}/${applications_cfg}" "${WD}/${settings_cfg}" "${mvn_dist_home}"
         fi
     else
         mkdir "${mvn_dist_home}"
-        cp "${WD}/applications.cfg" "${mvn_dist_home}"
+        cp "${WD}/${applications_cfg}" "${WD}/${settings_cfg}" "${mvn_dist_home}"
     fi
 
-    applications_dot_cfg="${mvn_dist_home}/applications.cfg"
+    applications_cfg="${mvn_dist_home}/${applications_cfg}"
+    settings_cfg="${mvn_dist_home}/${settings_cfg}"
 }
 
 ### Read applications.cfg, declare as an array
 parse_applications_from_config() {
-    applications_from_config=()
+    debug 5
     while read -r linje || [[ -n "${linje}" ]]; do
-        lest_linje=$(printf "%s", "${linje}" | sed "s/#.*$//" | xargs)
+        lest_linje=$(printf "%s" "${linje}" | sed "s/#.*$//" | xargs)
         if [[ "${lest_linje}" != "" ]]; then
-            applications_from_config+=( "${lest_linje}" )
+            applications_from_config_array+=( "${lest_linje}" )
         fi
-    done < "${applications_dot_cfg}"
+    done < "${applications_cfg}"
     declare -a applications_from_config
 }
 
 read_settings_cfg() {
+debug 3
   while read -r linje || [[ -n "${linje}" ]]; do
-    export linje
+    export "${linje}"
   done < "${settings_cfg}"
 }
 
 ### Utility for formatting output
 calc_terminal_size() {
+debug 4
     terminal_width=$(tput cols)
-    terminal_width=$([[ "${terminal_width}" -le "${MAX_TERMINAL_WIDTH}" ]] && printf "%s", "${terminal_width}" || printf "%s", "${MAX_TERMINAL_WIDTH}")
+    terminal_width=$([[ "${terminal_width}" -le "${MAX_TERMINAL_WIDTH}" ]] && printf "%s" "${terminal_width}" || printf "%s" "${MAX_TERMINAL_WIDTH}")
     if [[ "${terminal_width}" -lt "${MIN_TERMINAL_WIDTH}" ]]; then
         printf "Terminalen må være minimum %i kolonner bred for å gi feedback i et fornuftig format..." "${MIN_TERMINAL_WIDTH}"
         exit 1;
     fi
 }
-
-### Options
-display_options() {
-    options=(
-                ["-P, --profile"]="Alternativer: it, jrebel"
-                ["-p, --path=/sti/til/akr"]="Filsti til mappen som inneholder akr-applikasjonene"
-                ["-a, --applikasjoner"]="Navn på applikasjoner som skal bygges, kommaseparert"
-                ["-f, --force"]="Tving scriptet til å forsøke å bygge applikasjoner angitt med -a|--applikasjoner i valgt rekkefølge. Dette støtter også custom-navn på mappene"
-                ["-s, --skip-tests"]="Ikke kjør tester"
-                ["-c, --continue-on-error"]="Fortsett bygg av neste applikasjon ved kompileringsfeil"
-                ["-l, --split-logs"]="Splitt bygglogg. Én log per applikasjon. Hendig ved bruk av -c|--continue-on-error dersom en kompileringsfeil oppstår"
-                ["-v, --verbose"]="Full maven output"
-                ["-h, --help"]="Denne hjelpesiden"
-                ["-n, --do-not-disturb"]="Ikke gi forstyrr når bygget er ferdig"
-    )
-
-    flag_length=25
-    for i in "${!options[@]}"; do
-        printf "%-${flag_length}s" "${i}"
-        width=$(( terminal_width - flag_length ))
-        while read -r -d " " ord || [[ -n "${ord}" ]]; do
-            if [[ $(( ${#ord} + 1 )) -lt ${width} ]]; then
-                printf "%s " "${ord}"
-                width=$(( width - ${#ord} - 1 ))
-            else
-                printf "\\n%-${flag_length}s%s " " " "${ord}"
-                width=$(( terminal_width - flag_length - ${#ord} ))
-            fi
-        done <<< "${options[${i}]}"
-        printf "\\n\\n"
-    done
-}
-
 
 ### Layout functions
 move_cursor_up() {
@@ -264,8 +282,8 @@ parse_applications_from_cli() {
 
     if [[ "${force}" -eq 0 ]];then
         expected_applications
-        if [[ "${#application_difference[@]}" -gt 0 ]]; then
-            print_warning "$(printf "Ukjent applikasjon %s" "${application_difference[*]}")"
+        if [[ "${#application_difference_array[@]}" -gt 0 ]]; then
+            print_warning "$(printf "Ukjent applikasjon %s" "${application_difference_array[*]}")"
             exit 1
         fi
 
@@ -274,7 +292,7 @@ parse_applications_from_cli() {
     else
         if [[ "${#applications_from_cli[@]}" -gt 0 ]]; then
             unset "applications_from_config"
-            applications_from_config=( "${applications_from_cli[@]}" )
+            applications_from_config_array=( "${applications_from_cli[@]}" )
         else
             print_warning "${NO_APPLICATIONS}"
             exit 1
@@ -285,19 +303,19 @@ parse_applications_from_cli() {
 
 ### Declare difference between expected and actual applications as an array
 expected_applications() {
-    application_difference=()
+    application_difference_array=()
 
-    for i in "${!applications_from_cli[@]}"; do
+    for i in "${!applications_from_cli_array[@]}"; do
         skip=
 
-        for j in "${!applications_from_config[@]}"; do
-            if [[ "${applications_from_cli[${i}]}" == "${applications_from_config[${j}]}" ]]; then
+        for j in "${!applications_from_config_array[@]}"; do
+            if [[ "${applications_from_cli_array[${i}]}" == "${applications_from_config_array[${j}]}" ]]; then
                 skip=1
                 break
             fi
         done
 
-        [[ -n ${skip} ]] || application_difference+=( "${applications_from_cli[$i]}" )
+        [[ -n ${skip} ]] || application_difference+=( "${applications_from_cli_array[$i]}" )
 
     done
 
@@ -307,33 +325,33 @@ expected_applications() {
 ### Sort applications. Uses the applications.cfg order.
 sort_applications() {
 
-    for i in "${!applications_from_config[@]}"; do
-        for j in "${!applications_from_cli[@]}"; do
-            if [[ "${applications_from_config[${i}]}" == "${applications_from_cli[${j}]}" ]]; then
+    for i in "${!applications_from_config_array[@]}"; do
+        for j in "${!applications_from_cli_array[@]}"; do
+            if [[ "${applications_from_config_array[${i}]}" == "${applications_from_cli_array[${j}]}" ]]; then
                 skip=1
-                order+=( "${applications_from_config[$i]}" )
+                order+=( "${applications_from_config_array[$i]}" )
                 break
             fi
         done
     done
 
     unset "applications_from_config"
-    applications_from_config=( "${order[@]}" )
+    applications_from_config_array=( "${order[@]}" )
     unset "skal_bygges"
 }
 
 ### Utility function for displaying output.
 truncate_application_name() {
-    testtekstlengde=${2}
-    applikasjon=${1}
-    maks_lengde=$(( terminal_width - $(( testtekstlengde + 6 )) ))
-    if [[ ${maks_lengde} -lt 3 ]]; then
+    text_string_length=${2}
+    app=${1}
+    max_length=$(( terminal_width - $(( text_string_length + 6 )) ))
+    if [[ ${max_length} -lt 3 ]]; then
         printf "Terminalen er for smal til å gi fornuftig output. Resize til minimum %s kolonner og prøv igjen.\\n", "${MIN_TERMINAL_WIDTH}"
         exit 1
-    elif [[ ${maks_lengde} -gt ${#applikasjon} ]]; then
-        export pretty_print="${applikasjon}"
+    elif [[ ${max_length} -gt ${#app} ]]; then
+        export pretty_print="${app}"
     else
-        export pretty_print="${applikasjon:0:$maks_lengde}..."
+        export pretty_print="${app:0:$max_length}..."
     fi
 }
 
@@ -387,6 +405,7 @@ spin_cursor() {
 
 ### Strings for displaying time spent.
 calc_time_spent() {
+    debug 12
     TID_BRUKT=$(( SECONDS - START_TIME))
     MINUTTER=$(( TID_BRUKT / 60 ))
     SEKUNDER=$(( TID_BRUKT % 60 ))
@@ -408,6 +427,7 @@ calc_time_spent() {
 
 ### Parse options, assign values to variables.
 parse_options_and_initalize_values() {
+    debug 6
     options=$(getopt -o "sa:vzchfblnp:P:" -l "skip-tests,fix-bugs,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applikasjoner:,help" -- "$@")
     eval set -- "${options}"
 
@@ -437,60 +457,64 @@ parse_options_and_initalize_values() {
 
 ### Save cursor position at the beginning of the line
 initalize_cursor_position() {
+    debug 7
     printf "\\n"
     save_cursor_position
 }
 
 ### Check if we have received applications from cli.
 application_parsed_from_cli() {
+    debug 8
     ### Parse applications from cli if necessary
     [[ -n "${chosen_applications}" ]] && parse_applications_from_cli "${chosen_applications}"
 }
 
 ### Check for existence of application directory. Magic slash functionality.
 application_folder_exists() {
-  cd "${path}" && absolutt_path="$(pwd)" || print_warning "${INVALID_PATH}" && exit 1
+    debug 9 "${path}"
+    cd "${path}" && absolute_path="$(pwd)" || (print_warning "${INVALID_PATH}" && exit 1)
 }
 
 ### Build applications.
 build_applications() {
-    for i in "${!applications_from_config[@]}"; do
-        [[ ${build_profile} == "-Pit" && "${skip_tester}" != "-DskipTests" ]] && test_string=" med integrasjonstester" || test_string=""
-        application="${absolutt_path}"/"${applications_from_config[$i]}"
+    for i in "${!applications_from_config_array[@]}"; do
+        [[ ${build_profile} == "-Pit" && "${skip_tester}" != "-DskipTests" ]] && test_string=" with integration tests" || test_string=""
+        app="${absolute_path}/${applications_from_config_array[${i}]}"
 
-        byggtekst=$(printf "* Bygg %s", "${test_string}")
-        truncate_application_name "${applications_from_config[$i]}" "${#byggtekst}"
+        build_text=$(printf "* Build %s" "${test_string}")
+        debug "${applications_from_config_array[${i}]}" "${app}"
+        truncate_application_name "${applications_from_config_array[${i}]}" "${#build_text}"
 
         if [[ "${split_log}" -eq 1 ]]; then
-            log="/tmp/${applications_from_config[$i]}-bygg.log"
+            log="/tmp/${applications_from_config_array[${i}]}-build.log"
         fi
 
         ### Check if application directory exists
-        if [[ -d  "${application}" ]]; then
+        if [[ -d  "${app}" ]]; then
 
             ### If we cannot enter the folder at this stage, permissions are the usual suspects.
-            cd "${application}" || (print_warning "${PERMISSIONS}"; exit 1)
+            cd "${app}" || (print_warning "${PERMISSIONS}" && exit 1)
 
             ### Spinner or full maven output
             if [[ "${verbose}" -eq 0 ]]; then
-                printf "* Bygg %b%s%b%s" "${GREEN}" "${pretty_print}" "${NO_COLOUR}" "${test_string}"
-                mvn clean install ${build_profile} ${skip_tester} 2> >(tee /tmp/akr-bygg-error.log >&2) &>"${log}" & pid=$!
-                spin_cursor "${pid}" "${applications_from_config[$i]}" "${test_string}" "${pretty_print}"
+                printf "* Build %b%s%b%s" "${GREEN}" "${pretty_print}" "${NO_COLOUR}" "${test_string}"
+                mvn clean install ${build_profile} ${skip_tester} 2> >(tee /tmp/mvn-dist-error.log >&2) &>"${log}" & pid=$!
+                spin_cursor "${pid}" "${applications_from_config_array[$i]}" "${test_string}" "${pretty_print}"
             else
-                mvn clean install ${build_profile} ${skip_tester} > >(tee "${log}" 2> >(tee /tmp/akr-bygg-error.log >&2)) & pid=$!
+                mvn clean install ${build_profile} ${skip_tester} > >(tee "${log}" 2> >(tee /tmp/mvn-dist-error.log >&2)) & pid=$!
                 wait "${pid}"
                 if [[ $? -ne 0 ]]; then
                     if [[ "${continue}" -ne 1 ]]; then
                         print_warning "${BUILD_FAILURE}" && exit 1
                     else
-                        error_list["{$error_count}"]="\\n\\nApplikasjon:\\t${applications_from_config[$i]}\nLogg:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
+                        error_list["${error_count}"]="\\n\\nApplication:\\t${applications_from_config_array[$i]}\nLog:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
                         error_count=$(( error_count+1 ))
                     fi
                 fi
             fi
             build_count=$(( build_count + 1 ))
         else
-            printf "* Mislyktes med bygging av %s" "${applications_from_config[${i}]}"
+            printf "* Build failure: %s" "${applications_from_config_array[${i}]}"
             print_warning "${NOT_FOUND}"
         fi
     done
@@ -498,9 +522,10 @@ build_applications() {
 
 ### Generates error message(s)
 generate_error_message() {
+    debug 11
     if [[ ${error_count} -gt 0 ]]; then
         printf "\\n\\n"
-        feil="Byggfeil"
+        feil="Build failure"
         padlengde=$(( (terminal_width / 2) -  (${#feil} / 2) - 1 ))
         pad "${padlengde}"
         printf " %b " "${RED}${BOLD}${feil}${NO_COLOUR}"
@@ -511,12 +536,13 @@ generate_error_message() {
         printf "\\n\\n"
         pad "{$terminal_width}"
         printf "\\n"
-        ERROR_MSG=" med ${RED}${BOLD}${error_count} feil${NO_COLOUR}..."
+        ERROR_MSG=" with ${RED}${BOLD}${error_count} errors${NO_COLOUR}..."
     fi
 }
 
 ### Summarize
 display_summary() {
+    debug 13
     if [[ "${build_count}" -gt 0 ]]; then
         command -v notify-send > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Bygg Ferdig" "Bygget tok\\n<i>${MINUTT_STRENG}${SEKUND_STRENG}</i>")
         command -v osascript > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && osascript -e "display notification \"Bygget tok ${MINUTT_STRENG}${SEKUND_STRENG}\" with title \"Bygg Ferdig\"")
@@ -529,10 +555,10 @@ display_summary() {
 }
 
 #### Start script
+get_mvn_installation_home
+look_for_cfg
 read_settings_cfg
 calc_terminal_size
-get_pwd
-look_for_cfg
 parse_applications_from_config
 parse_options_and_initalize_values "$@"
 initalize_cursor_position
