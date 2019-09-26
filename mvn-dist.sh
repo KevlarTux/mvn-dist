@@ -74,12 +74,7 @@ look_for_cfg() {
 }
 
 read_settings_cfg() {
-#  set -a
-#  . "${settings_cfg}"
-#  set +a
   while IFS="=" read -r key value || [[ -n "${key}" ]]; do
-#    key=$( printf "%s" "${linje}" | sed "s/=.*//" )
-#    value=$( printf "%s" "${linje}" | sed "s/.*=//" )
     debug "${key}" "${value}"
     export "${key}=${value//'"'/}"
   done < "${settings_cfg}"
@@ -88,11 +83,9 @@ read_settings_cfg() {
 ### Utility for formatting output
 calc_terminal_size() {
     terminal_width=$(tput cols)
-    debug "Etter tput, terminal_width" "${terminal_width}"
     terminal_width=$( ([[ "${terminal_width}" -le "${MAX_TERMINAL_WIDTH}" ]] && printf "%s" "${terminal_width}") || printf "%s" "${MAX_TERMINAL_WIDTH}")
-    debug "Etter cond, terminal_width" "${terminal_width}"
     if [[ "${terminal_width}" -lt "${MIN_TERMINAL_WIDTH}" ]]; then
-        printf "Terminalen må være minimum %i kolonner bred for å gi feedback i et fornuftig format..." "${MIN_TERMINAL_WIDTH}"
+        printf "The terminal needs a width of at least %s to give feedback in a meaningful format." "${MIN_TERMINAL_WIDTH}"
         exit 1;
     fi
 }
@@ -100,16 +93,16 @@ calc_terminal_size() {
 ### Options
 display_options() {
     options=(
-                ["-P, --profile"]="Alternativer: it, jrebel"
-                ["-p, --path=/sti/til/akr"]="Filsti til mappen som inneholder akr-applikasjonene"
-                ["-a, --applikasjoner"]="Navn på applikasjoner som skal bygges, kommaseparert"
-                ["-f, --force"]="Tving scriptet til å forsøke å bygge applikasjoner angitt med -a|--applikasjoner i valgt rekkefølge. Dette støtter også custom-navn på mappene"
-                ["-s, --skip-tests"]="Ikke kjør tester"
-                ["-c, --continue-on-error"]="Fortsett bygg av neste applikasjon ved kompileringsfeil"
-                ["-l, --split-logs"]="Splitt bygglogg. Én log per applikasjon. Hendig ved bruk av -c|--continue-on-error dersom en kompileringsfeil oppstår"
-                ["-v, --verbose"]="Full maven output"
-                ["-h, --help"]="Denne hjelpesiden"
-                ["-n, --do-not-disturb"]="Ikke gi forstyrr når bygget er ferdig"
+                ["-P, --profile"]="One of the profiles provided in profiles.cfg"
+                ["-p, --path=/path/to/source"]="Path to the folder holding the applications to build."
+                ["-a, --applications"]="Comma separated list of applications to build."
+                ["-f, --force"]="Force mvn-dist to build applications provided by -a|--applications in given order. This also supports custom names of folders holding the applications."
+                ["-s, --skip-tests"]="Do not run integration tests."
+                ["-c, --continue-on-error"]="Continue building the next application on build failure."
+                ["-l, --split-logs"]="Split log for each application. Makes sense when utilizing -c|--continue-on-error."
+                ["-v, --verbose"]="Print full Maven output"
+                ["-h, --help"]="This help page."
+                ["-n, --do-not-disturb"]="Do not disturb when build is finished."
     )
 
     debug "terminal_width:" "${terminal_width}" "${MAX_TERMINAL_WIDTH}" "42"
@@ -150,46 +143,46 @@ NO_APPLICATIONS="Could not find any applications to process. Skip -f|--force to 
 
 ### Tekststreng for bruk av scriptet - typisk usage()
 #read_usage() {
-read -r -d '' BRUK << EOM
+read -r -d '' USAGE << EOM
 
 Bygger AKR-applikasjoner i angitt filsti eller nåværende mappe. Logger til\\n/tmp/akr-bygg.log eller /tmp/<akr-applikasjon>-bygg.log og /tmp/akr-bygg-error.log
 
 ${GREEN}Usage:${NO_COLOUR}
-bob build-akr [options]
+mvn-dist [options]
 
 ${GREEN}Options:${NO_COLOUR}
 help=${display_options} && echo ${help}
 
-${GREEN}Eksempler:${NO_COLOUR}
-Bygg alle akr-applikasjoner under /mnt/data/git/
-${BLUE}bob build-akr -p /mnt/data/git${NO_COLOUR}
+${GREEN}Examples:${NO_COLOUR}
+Build all applications in /mnt/data/git
+${BLUE}mvn-dist -p /mnt/data/git${NO_COLOUR}
 
-Bygg alle akr-applikasjoner i nåværende mappe med integrasjonstester
-${BLUE}bob build-akr -P it${NO_COLOUR}
+Build only application named model without integration tests.
+${BLUE}mvn-dist --skip-tests -a model${NO_COLOUR}
 
-Bygg kun akr-modell uten tester
-${BLUE}bob build-akr --skip-tests -a akr-modell${NO_COLOUR}
+Build applications model, common and case, force to build in given order.
+${BLUE}mvn-dist -a model,common,case -f${NO_COLOUR}
 
-Bygg akr-modell,akr-common og akr-sak i valgt rekkefølge
-${BLUE}bob build-akr -a akr-modell,akr-common,akr-sak -f${NO_COLOUR}
+Build an application with a custom name.
+${BLUE}mvn-dist -a akr-omniapplikasjon -f${NO_COLOUR}
 
-Bygg en applikasjon med custom-navn
-${BLUE}bob build-akr -a akr-omniapplikasjon -f${NO_COLOUR}
+Build all applications in /mnt/data/git with profile it,\\nContinue building the next application on build error and log separately.
+${BLUE}mvn-dist -p /mnt/data/git -P it -c -l${NO_COLOUR}
 
-Bygg  alle applikasjoner under /mnt/data/git med integrasjonstester,\\nfortsett bygg av neste applikasjon ved feil og log til separate filer
-${BLUE}bob build-akr -p /mnt/data/git -P it -c -l${NO_COLOUR}
+${GREEN}Tip:${NO_COLOUR}
+Use short flags when you need tab completion.
+If utilizing --continue-on-error you should consider splitting logs using --split-logs.
+Add applications to build in applications.cfg
+Add build profiles in profiles.cfg
 
-${GREEN}Tips:${NO_COLOUR}
-Bruk kortversjonen av flagg ved behov for tab completion\\n
-Dersom man benytter --continue-on-error eller -c så anbefales det å splitte byggloggene ved hjelp av --split-logs eller -l\\n
-Dersom man savner noen applikasjoner kan de legges til i /home/vagrant/.mvn-dist/applications.cfg
+${GREEN}Known issues:${NO_COLOUR}
+applications.cfg and its siblings should be edited using a UNIX flavour due to MS' new-line challenges.
+Consider using a terminal with a minimum width of 80 to get decently formatted output.
 
-${GREEN}Kjente feil:${NO_COLOUR}
-Tekstfilen /home/vagrant/.mvn-dist/applications.cfg MÅ redigeres i Unix grunnet newline-utfordringene\\ntil Microsoft. Rekkefølgen i nevnte fil blir default\\n
-Formattering av output fungerer best i terminal som har >= 80 kolonner bredde
-
-${GREEN}Konfigurasjonsfiler:${NO_COLOUR}
-/home/vagrant/.mvn-dist/applications.cfg\\n\\n
+${GREEN}Configuration files:${NO_COLOUR}
+$HOME/.mvn-dist/applications.cfg
+$HOME/.mvn-dist/settings.cfg
+$HOME/.mvn-dist/profiles.cfg\\n\\n
 EOM
 
 #    return "${BRUK}"
@@ -229,10 +222,10 @@ EOA
 
 ### Read applications.cfg, declare as an array
 parse_applications_from_config() {
-    while read -r linje || [[ -n "${linje}" ]]; do
-        lest_linje=$(printf "%s" "${linje}" | sed "s/#.*$//" | xargs)
-        if [[ "${lest_linje}" != "" ]]; then
-            applications_from_config_array+=( "${lest_linje}" )
+    while read -r line || [[ -n "${line}" ]]; do
+        read_line=$(printf "%s" "${line}" | sed "s/#.*$//" | xargs)
+        if [[ "${read_line}" != "" ]]; then
+            applications_from_config_array+=( "${read_line}" )
         fi
     done < "${applications_cfg}"
     # declare -a applications_from_config
@@ -275,9 +268,9 @@ print_warning() {
 
 ### Utility function for padding
 pad() {
-    lengde=$1
+    length=$1
     i=0
-    while [[ "${i}" -lt "${lengde}" ]]; do
+    while [[ "${i}" -lt "${length}" ]]; do
         printf "%s" "*"
         i=$(( i+1 ))
     done
@@ -285,10 +278,8 @@ pad() {
 
 ### Manual
 usage() {
-#    use=read_usage
-
     display_options
-    printf "%b" "${BRUK}"
+    printf "%b" "${USAGE}"
 }
 
 ### Parse cli applications.
@@ -352,28 +343,27 @@ sort_applications() {
 
     unset "applications_from_config"
     applications_from_config_array=( "${order[@]}" )
-    unset "skal_bygges"
 }
 
 ### Strings for displaying time spent.
 calc_time_spent() {
-    TID_BRUKT=$(( SECONDS - START_TIME))
-    MINUTTER=$(( TID_BRUKT / 60 ))
-    SEKUNDER=$(( TID_BRUKT % 60 ))
+    TIME_SPENT=$(( SECONDS - START_TIME))
+    MINUTES_SPENT=$(( TIME_SPENT / 60 ))
+    SECONDS_SPENT=$(( TIME_SPENT % 60 ))
 
-    if [[ ${SEKUNDER} -eq 1 ]]; then
-        SEKUND_STRENG="1 sekund"
-    elif [[ ${SEKUNDER} -gt 1 ]];then
-        SEKUND_STRENG="${SEKUNDER} sekunder"
+    if [[ ${SECONDS_SPENT} -eq 1 ]]; then
+        SECOND_STRING="1 sekund"
+    elif [[ ${SECONDS_SPENT} -gt 1 ]];then
+        SECOND_STRING="${SECONDS_SPENT} sekunder"
     fi
 
-    if [[ ${MINUTTER} -eq 1 ]]; then
-        MINUTT_STRENG="1 minutt"
-    elif [[ ${MINUTTER} -gt 1 ]];then
-        MINUTT_STRENG="${MINUTTER} minutter"
+    if [[ ${MINUTES_SPENT} -eq 1 ]]; then
+        MINUTE_STRING="1 minutt"
+    elif [[ ${MINUTES_SPENT} -gt 1 ]];then
+        MINUTE_STRING="${MINUTES_SPENT} minutter"
     fi
 
-    [[ -n ${SEKUND_STRENG} && -n ${MINUTT_STRENG} ]] && MINUTT_STRENG="${MINUTT_STRENG} og "
+    [[ -n ${SECOND_STRING} && -n ${MINUTE_STRING} ]] && MINUTE_STRING="${MINUTT_STRENG} og "
 }
 
 ### Parse options, assign values to variables.
@@ -381,6 +371,7 @@ parse_options_and_initalize_values() {
     available_options_string=$(getopt -o "sa:vzchfblnp:P:" -l "skip-tests,fix-bugs,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applications:,help" -- "$@")
     eval set -- "${available_options_string}"
 
+    # TODO! Fix profile handling
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -a|--applications) chosen_applications="${2}" ; shift 2 ;;
@@ -392,7 +383,7 @@ parse_options_and_initalize_values() {
                     esac ;;
             -f|--force) force=1 ; shift ;;
             -n|--do-not-disturb) skip_notification=1 ; shift ;;
-            -s|--skip-tests) skip_tester="-DskipTests" ; shift ;;
+            -s|--skip-tests) skip_tests="-DskipTests" ; shift ;;
             -p|--path) path="${2}" ; shift 2 ;;
             -l|--split-logs) split_log=1 ; shift ;;
             -c|--continue-on-error) continue=1 ; shift ;;
@@ -400,7 +391,7 @@ parse_options_and_initalize_values() {
             -v|--verbose) verbose=1 ; shift ;;
             -h|--help) usage && exit 0 ;;
             --) shift ; break ;;
-            *) printf "%s" "$0: feil - ukjent flagg - prøv igjen $1" 1>&2; exit 1 ;;
+            *) printf "%s" "$0: Error... Unknown flag. $1" 1>&2; exit 1 ;;
         esac
     done
 }
@@ -426,7 +417,7 @@ application_folder_exists() {
 ### Build applications.
 build_applications() {
     for i in "${!applications_from_config_array[@]}"; do
-        [[ ${build_profile} == "-Pit" && "${skip_tester}" != "-DskipTests" ]] && test_string=" with integration tests" || test_string=""
+        [[ ${build_profile} == "-Pit" && "${skip_tests}" != "-DskipTests" ]] && test_string=" with integration tests" || test_string=""
         application="${applications_from_config_array[${i}]}"
         application_path="${absolute_path}/${application}"
 
@@ -446,10 +437,10 @@ build_applications() {
             ### Spinner or full maven output
             if [[ "${verbose}" -eq 0 ]]; then
                 printf "* Build %b%s%b%s" "${GREEN}" "${pretty_print}" "${NO_COLOUR}" "${test_string}"
-                mvn clean install ${build_profile} ${skip_tester} 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
+                mvn clean install ${build_profile} ${skip_tests} 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
                 spin_cursor #"${pid}" "${application}" "${test_string}" "${pretty_print}"
             else
-                mvn clean install ${build_profile} ${skip_tester} > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
+                mvn clean install ${build_profile} ${skip_tests} > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
 
                 if ! wait "${pid}"; then
                     if [[ "${continue}" -ne 1 ]]; then
@@ -473,7 +464,7 @@ truncate_application_name() {
     max_length=$(( terminal_width - $(( ${#build_text} + 6 )) ))
 
     if [[ ${max_length} -lt 3 ]]; then
-        printf "Terminalen er for smal til å gi fornuftig output. Resize til minimum %s kolonner og prøv igjen.\\n", "${MIN_TERMINAL_WIDTH}"
+        printf "The terminal is too narrow to give meaningful output. Please resize to a width of minimum %s.\\n", "${MIN_TERMINAL_WIDTH}"
         exit 1
     elif [[ ${max_length} -gt ${#application} ]]; then
         pretty_print="${application}"
@@ -511,7 +502,7 @@ spin_cursor() {
 
         if [[ "${continue}" -ne 1 ]]; then
             printf "\\n\\n"
-            tail -n 400 "${log}"
+            tail -n 400 "${log}" # TODO! This should be a variable in settings.cfg
             print_warning "${BUILD_FAILURE}" && exit 1
         else
             error_list[$error_count]="\\n\\nApplikasjon:\\t${application}\nLogg:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
@@ -530,11 +521,11 @@ spin_cursor() {
 generate_error_message() {
     if [[ ${error_count} -gt 0 ]]; then
         printf "\\n\\n"
-        feil="Build failure"
-        padlengde=$(( (terminal_width / 2) -  (${#feil} / 2) - 1 ))
-        pad "${padlengde}"
-        printf " %b " "${RED}${BOLD}${feil}${NO_COLOUR}"
-        pad "${padlengde}"
+        error="Build failure"
+        pad_length=$(( (terminal_width / 2) -  (${#error} / 2) - 1 ))
+        pad "${pad_length}"
+        printf " %b " "${RED}${BOLD}${error}${NO_COLOUR}"
+        pad "${pad_length}"
         for i in "${!error_list[@]}"; do
             printf "%b" "${error_list[$i]}"
         done
@@ -548,13 +539,13 @@ generate_error_message() {
 ### Summarize
 display_summary() {
     if [[ "${build_count}" -gt 0 ]]; then
-        command -v notify-send > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Bygg Ferdig" "Bygget tok\\n<i>${MINUTT_STRENG}${SEKUND_STRENG}</i>")
-        command -v osascript > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && osascript -e "display notification \"Bygget tok ${MINUTT_STRENG}${SEKUND_STRENG}\" with title \"Bygg Ferdig\"")
-        printf "%b%b%s%b%b" "\n\n" "${GREEN}${BOLD}" "Bygg ferdig" "${NO_COLOUR}" " etter ${MINUTT_STRENG}${SEKUND_STRENG}${ERROR_MSG}\\n\\n"
+        command -v notify-send > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Build completed" "Build took \\n<i>${MINUTT_STRENG}${SECOND_STRING}</i>")
+        command -v osascript > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && osascript -e "display notification \"Build took ${MINUTT_STRENG}${SECOND_STRING}\" with title \"Build completed\"")
+        printf "%b%b%s%b%b" "\n\n" "${GREEN}${BOLD}" "Build completed" "${NO_COLOUR}" " after ${MINUTT_STRENG}${SECOND_STRING}${ERROR_MSG}\\n\\n"
     else
-        command -v notify-send > /dev/null 2>&1 && [[ ${skip_notification} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Ferdig" "Fant ingenting å  bygge"
-        command -v osascript > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && osascript -e "display notification \"Fant ingenting å bygge...\" with title \"Bygg Ferdig\"")
-        printf "Fant ingenting å gjøre. Ingen applikasjoner ble bygd.\\n\\n"
+        command -v notify-send > /dev/null 2>&1 && [[ ${skip_notification} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Done" "Found zero applications to build"
+        command -v osascript > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && osascript -e "display notification \"Found zero applications to build...\" with title \"Build completed\"")
+        printf "Build finished. Did not find any applications to build.\\n\\n"
     fi
 }
 
