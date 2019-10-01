@@ -246,8 +246,24 @@ parse_applications_from_config() {
 
             if [[ -n "${has_specified_modules}" && "${has_specified_modules}" != "\n" ]]; then
                 string_remainder="$(echo "${parsed_line}" | sed "s/^.*://")"
+                modules=""
+                debug "String Remainder: ${string_remainder}"
+                module="${string_remainder:0:$(expr index ${string_remainder} ",")}"
+
+                while [[ "${module}" ]]; do
+                    modules+="${module}"
+                    debug "modules: ${modules}"
+                    string_remainder="${string_remainder#${module}}"
+                    string_remainder="${string_remainder#,}"
+                    if [[ -n $(echo "${string_remainder}" | grep ",") ]]; then
+                        module="${string_remainder:0:$(expr index ${string_remainder} ",")}"
+                    else
+                        module=${string_remainder}
+                    fi
+                done
+                debug "Modules: ${modules}"
                 main_module=$(echo "${parsed_line}" | sed "s/:.*$//")
-                applications_from_config_array+=( "${main_module},-pl ${string_remainder}" )
+                applications_from_config_array+=( "${main_module}:-pl ${modules}" )
             else
                 applications_from_config_array+=( "${parsed_line}" )
             fi
@@ -439,9 +455,9 @@ build_applications() {
     for i in "${!applications_from_config_array[@]}"; do
         [[ ${build_profile} == "-Pit" && "${skip_tests}" != "-DskipTests" ]] && test_string=" with integration tests " || test_string="" # TODD: Remove the test string
 
-        if [[ -n $(echo "${applications_from_config_array[${i}]}" | grep ",") ]]; then
-            application=$(echo "${applications_from_config_array[${i}]}" | sed "s/,.*//")
-            specified_modules=$(echo "${applications_from_config_array[${i}]}" | sed "s/.*,//")
+        if [[ -n $(echo "${applications_from_config_array[${i}]}" | grep ":") ]]; then
+            application=$(echo "${applications_from_config_array[${i}]}" | sed "s/:.*//")
+            specified_modules=$(echo "${applications_from_config_array[${i}]}" | sed "s/.*://g")
         else
             application="${applications_from_config_array[${i}]}"
         fi
