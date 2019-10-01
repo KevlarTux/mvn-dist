@@ -2,6 +2,7 @@
 
 ## TODO: skipModules --> bris-frontend:!bris-frontend-frontend # Exclude
 ## TODO: skipModules --> bris-frontend:bris-frontend-domain # Include only
+## TODO: sanity check for profiles
 
 DEBUG=0
 ### Arrays
@@ -11,6 +12,7 @@ declare -a order=()
 declare -a applications_from_cli_array=()
 declare -a applications_from_config_array=()
 declare -a application_difference_array=()
+declare -a profiles=()
 ### Strings
 declare ERROR_MSG=""
 declare build_profile=""
@@ -21,11 +23,13 @@ declare path=.
 declare application_path=""
 declare absolute_path=""
 declare application=""
+declare profiles_cfg="profiles.cfg"
 declare applications_cfg="applications.cfg"
 declare settings_cfg="settings.cfg"
 declare mvn_dist_home="${HOME}/.mvn-dist"
 declare pretty_print=""
 declare available_options_string=""
+declare specified_modules=""
 ### Integers
 declare -i START_TIME=$SECONDS
 declare -i terminal_width=80
@@ -58,27 +62,40 @@ get_mvn_dist_home() {
 }
 
 ### Check if applications.cfg is available in $HOME
-# TODO: Split if
 look_for_cfg() {
     if [[ -d "${mvn_dist_home}" ]]; then
-        if [[ ! -e "${mvn_dist_home}/${applications_cfg}" && ! -e "${mvn_dist_home}/${settings_cfg}" ]]; then
-            cp "${WD}/${applications_cfg}" "${WD}/${settings_cfg}" "${mvn_dist_home}"
+        if [[ ! -e "${mvn_dist_home}/${applications_cfg}" ]]; then
+            cp "${WD}/${applications_cfg}" "${mvn_dist_home}"
+        fi
+        if [[ ! -e "${mvn_dist_home}/${settings_cfg}" ]]; then
+            cp "${WD}/${settings_cfg}" "${mvn_dist_home}"
+        fi
+        if [[ ! -e "${mvn_dist_home}/${profiles_cfg}" ]]; then
+            cp "${WD}/${profiles_cfg}" "${mvn_dist_home}"
         fi
     else
         mkdir "${mvn_dist_home}"
-        cp "${WD}/${applications_cfg}" "${WD}/${settings_cfg}" "${mvn_dist_home}"
+        cp "${WD}/${applications_cfg}" "${WD}/${profiles_cfg}" "${WD}/${settings_cfg}" "${mvn_dist_home}"
     fi
 
     applications_cfg="${mvn_dist_home}/${applications_cfg}"
     settings_cfg="${mvn_dist_home}/${settings_cfg}"
+    profiles_cfg="${mvn_dist_home}/${profiles_cfg}"
 }
 
 read_settings_cfg() {
   while IFS="=" read -r key value || [[ -n "${key}" ]]; do
-    debug "${key}" "${value}"
-    export "${key}=${value//'"'/}"
+        debug "${key}" "${value}"
+        export "${key}=${value//'"'/}"
   done < "${settings_cfg}"
 }
+
+read_profiles_cfg() {
+    while read profile || [[ -n "${profile}" ]]; do
+        profiles+=( "${profile}" )
+    done < "${profiles_cfg}"
+}
+
 
 ### Utility for formatting output
 calc_terminal_size() {
@@ -188,7 +205,7 @@ EOM
 #    return "${BRUK}"
 #}
 
-### So shoot me - et påskeegg
+### So shoot me
 read -r -d '' FIX << EOA
 \\n
            ▄▄▄▄▄▄▄▄▄▄▄▄▄
@@ -222,13 +239,22 @@ EOA
 
 ### Read applications.cfg, declare as an array
 parse_applications_from_config() {
-    while read -r line || [[ -n "${line}" ]]; do
-        read_line=$(printf "%s" "${line}" | sed "s/#.*$//" | xargs)
-        if [[ "${read_line}" != "" ]]; then
-            applications_from_config_array+=( "${read_line}" )
+    while read line || [[ -n "${line}" ]]; do
+        parsed_line=$(printf "%s" "${line}" | sed "s/#.*$//" | xargs)
+        if [[ -n "${parsed_line}" ]]; then
+            has_specified_modules=$(echo "${parsed_line}" | grep ":")
+
+            if [[ -n "${has_specified_modules}" && "${has_specified_modules}" != "\n" ]]; then
+                string_remainder="$(echo "${parsed_line}" | sed "s/^.*://")"
+                main_module=$(echo "${parsed_line}" | sed "s/:.*$//")
+                applications_from_config_array+=( "${main_module},-pl ${string_remainder}" )
+            else
+                applications_from_config_array+=( "${parsed_line}" )
+            fi
         fi
+
     done < "${applications_cfg}"
-    # declare -a applications_from_config
+    debug "${applications_from_config_array[@]}"
 }
 
 ### Layout functions
@@ -352,18 +378,18 @@ calc_time_spent() {
     SECONDS_SPENT=$(( TIME_SPENT % 60 ))
 
     if [[ ${SECONDS_SPENT} -eq 1 ]]; then
-        SECOND_STRING="1 sekund"
+        SECOND_STRING="1 second"
     elif [[ ${SECONDS_SPENT} -gt 1 ]];then
-        SECOND_STRING="${SECONDS_SPENT} sekunder"
+        SECOND_STRING="${SECONDS_SPENT} seconds"
     fi
 
     if [[ ${MINUTES_SPENT} -eq 1 ]]; then
-        MINUTE_STRING="1 minutt"
+        MINUTE_STRING="1 minute"
     elif [[ ${MINUTES_SPENT} -gt 1 ]];then
-        MINUTE_STRING="${MINUTES_SPENT} minutter"
+        MINUTE_STRING="${MINUTES_SPENT} minutes"
     fi
 
-    [[ -n ${SECOND_STRING} && -n ${MINUTE_STRING} ]] && MINUTE_STRING="${MINUTT_STRENG} og "
+    [[ -n ${SECOND_STRING} && -n ${MINUTE_STRING} ]] && MINUTE_STRING="${MINUTE_STRING} og "
 }
 
 ### Parse options, assign values to variables.
@@ -371,16 +397,10 @@ parse_options_and_initalize_values() {
     available_options_string=$(getopt -o "sa:vzchfblnp:P:" -l "skip-tests,fix-bugs,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applications:,help" -- "$@")
     eval set -- "${available_options_string}"
 
-    # TODO! Fix profile handling
     while [[ $# -gt 0 ]]; do
-        case "$1" in
+        case "${1}" in
             -a|--applications) chosen_applications="${2}" ; shift 2 ;;
-            -P|--profile)
-                    case "$2" in
-                        jrebel) build_profile="-Pjrebel" ; shift 2 ;;
-                        it) build_profile="-Pit" ; shift 2 ;;
-                        *) print_warning "${UNKNOWN_PROFILE}" && exit 1 ;;
-                    esac ;;
+            -P|--profile) build_profile="-P${2}" ; shift 2 ;;
             -f|--force) force=1 ; shift ;;
             -n|--do-not-disturb) skip_notification=1 ; shift ;;
             -s|--skip-tests) skip_tests="-DskipTests" ; shift ;;
@@ -417,8 +437,24 @@ application_folder_exists() {
 ### Build applications.
 build_applications() {
     for i in "${!applications_from_config_array[@]}"; do
-        [[ ${build_profile} == "-Pit" && "${skip_tests}" != "-DskipTests" ]] && test_string=" with integration tests" || test_string=""
-        application="${applications_from_config_array[${i}]}"
+        [[ ${build_profile} == "-Pit" && "${skip_tests}" != "-DskipTests" ]] && test_string=" with integration tests " || test_string="" # TODD: Remove the test string
+
+        if [[ -n $(echo "${applications_from_config_array[${i}]}" | grep ",") ]]; then
+            application=$(echo "${applications_from_config_array[${i}]}" | sed "s/,.*//")
+            specified_modules=$(echo "${applications_from_config_array[${i}]}" | sed "s/.*,//")
+        else
+            application="${applications_from_config_array[${i}]}"
+        fi
+
+        build_parameters=""
+
+        [[ -n "${build_profile}" ]] && build_parameters+="${build_profile} "
+        debug 11 "${build_parameters}"
+        [[ -n "${specified_modules}" ]] && build_parameters+="${specified_modules} "
+        debug 12 "${build_parameters}"
+        [[ -n "${skip_tests}" ]] && build_parameters+="${skip_tests}"
+        debug 13 "${build_parameters}"
+
         application_path="${absolute_path}/${application}"
 
         build_text=$(printf "* Build %s" "${test_string}")
@@ -428,6 +464,7 @@ build_applications() {
             log="/tmp/${application}-build.log"
         fi
 
+        debug "${application_path}"
         ### Check if application directory exists
         if [[ -d  "${application_path}" ]]; then
 
@@ -437,11 +474,20 @@ build_applications() {
             ### Spinner or full maven output
             if [[ "${verbose}" -eq 0 ]]; then
                 printf "* Build %b%s%b%s" "${GREEN}" "${pretty_print}" "${NO_COLOUR}" "${test_string}"
-                mvn clean install ${build_profile} ${skip_tests} 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
-                spin_cursor #"${pid}" "${application}" "${test_string}" "${pretty_print}"
+                if [[ -n "${build_parameters}" ]]; then
+                    mvn clean install ${build_parameters} 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
+                else
+                    mvn clean install 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
+                fi
+                spin_cursor
             else
-                mvn clean install ${build_profile} ${skip_tests} > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
-
+                debug 42 "${build_parameters}"
+                if [[ -n "${build_parameters}" ]]; then
+                    mvn clean install ${build_parameters} > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
+                else
+                    mvn clean install > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
+                    mvn clean install > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
+                fi
                 if ! wait "${pid}"; then
                     if [[ "${continue}" -ne 1 ]]; then
                         print_warning "${BUILD_FAILURE}" && exit 1
@@ -456,6 +502,8 @@ build_applications() {
             printf "* Build failure: %s" "${application}"
             print_warning "${NOT_FOUND}"
         fi
+        unset specified_modules
+        unset build_parameters
     done
 }
 
@@ -502,7 +550,7 @@ spin_cursor() {
 
         if [[ "${continue}" -ne 1 ]]; then
             printf "\\n\\n"
-            tail -n 400 "${log}" # TODO! This should be a variable in settings.cfg
+            tail -n "${LOG_TAIL_LENGTH}" "${log}"
             print_warning "${BUILD_FAILURE}" && exit 1
         else
             error_list[$error_count]="\\n\\nApplikasjon:\\t${application}\nLogg:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
@@ -514,7 +562,6 @@ spin_cursor() {
         delete_until_end_of_line
         printf "%b%s%b" "${GREEN}${BOLD}" "OK" "${NO_COLOUR}\\n"
     fi
-
 }
 
 ### Generates error message(s)
@@ -539,9 +586,9 @@ generate_error_message() {
 ### Summarize
 display_summary() {
     if [[ "${build_count}" -gt 0 ]]; then
-        command -v notify-send > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Build completed" "Build took \\n<i>${MINUTT_STRENG}${SECOND_STRING}</i>")
-        command -v osascript > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && osascript -e "display notification \"Build took ${MINUTT_STRENG}${SECOND_STRING}\" with title \"Build completed\"")
-        printf "%b%b%s%b%b" "\n\n" "${GREEN}${BOLD}" "Build completed" "${NO_COLOUR}" " after ${MINUTT_STRENG}${SECOND_STRING}${ERROR_MSG}\\n\\n"
+        command -v notify-send > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Build completed" "Build took \\n<i>${MINUTE_STRING}${SECOND_STRING}</i>")
+        command -v osascript > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && osascript -e "display notification \"Build took ${MINUTE_STRING}${SECOND_STRING}\" with title \"Build completed\"")
+        printf "%b%b%s%b%b" "\n\n" "${GREEN}${BOLD}" "Build completed" "${NO_COLOUR}" " after ${MINUTE_STRING}${SECOND_STRING}${ERROR_MSG}\\n\\n"
     else
         command -v notify-send > /dev/null 2>&1 && [[ ${skip_notification} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Done" "Found zero applications to build"
         command -v osascript > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && osascript -e "display notification \"Found zero applications to build...\" with title \"Build completed\"")
@@ -554,6 +601,7 @@ get_mvn_dist_home
 look_for_cfg
 read_settings_cfg
 calc_terminal_size
+read_profiles_cfg
 parse_applications_from_config
 parse_options_and_initalize_values "$@"
 initalize_cursor_position
