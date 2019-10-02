@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 
-## TODO: skipModules --> bris-frontend:!bris-frontend-frontend # Exclude
-## TODO: skipModules --> bris-frontend:bris-frontend-domain # Include only
-## TODO: sanity check for profiles
+## TODO: sanity check for profiles - How the hell do we do that?
 
 DEBUG=0
 ### Arrays
@@ -15,6 +13,7 @@ declare -a application_difference_array=()
 declare -a profiles=()
 ### Strings
 declare ERROR_MSG=""
+declare MVN_DIST_LOG=""
 declare build_profile=""
 declare log="/tmp/mvn-dist.log"
 declare error_log="/tmp/mvn-dist-error.log"
@@ -32,6 +31,9 @@ declare available_options_string=""
 declare specified_modules=""
 ### Integers
 declare -i START_TIME=$SECONDS
+declare -i LOG_TAIL_LENGTH
+declare -i MAX_TERMINAL_WIDTH
+declare -i MIN_TERMINAL_WIDTH
 declare -i terminal_width=80
 declare -i flag_length=25
 declare -i miscellaneous_text_length=8
@@ -85,8 +87,8 @@ look_for_cfg() {
 
 read_settings_cfg() {
   while IFS="=" read -r key value || [[ -n "${key}" ]]; do
-        debug "${key}" "${value}"
-        export "${key}=${value//'"'/}"
+        debug "${key}=${value}"
+        export "${key}=${value}"
   done < "${settings_cfg}"
 }
 
@@ -326,21 +328,21 @@ usage() {
 
 ### Parse cli applications.
 parse_applications_from_cli() {
-    IFS=',' read -r -a applications_from_cli <<< "${1}"
+    IFS=',' read -r -a applications_from_cli_array <<< "${1}"
 
     if [[ "${force}" -eq 0 ]];then
         expected_applications
+
         if [[ "${#application_difference_array[@]}" -gt 0 ]]; then
             print_warning "$(printf "Ukjent applikasjon %s" "${application_difference_array[*]}")"
             exit 1
         fi
 
         sort_applications
-
     else
-        if [[ "${#applications_from_cli[@]}" -gt 0 ]]; then
-            unset "applications_from_config"
-            applications_from_config_array=( "${applications_from_cli[@]}" )
+        if [[ "${#applications_from_cli_array[@]}" -gt 0 ]]; then
+            unset "applications_from_config_array"
+            applications_from_config_array=( "${applications_from_cli_array[@]}" )
         else
             print_warning "${NO_APPLICATIONS}"
             exit 1
@@ -352,12 +354,15 @@ parse_applications_from_cli() {
 ### Declare difference between expected and actual applications as an array
 expected_applications() {
     application_difference_array=()
+    debug 131313
 
     for i in "${!applications_from_cli_array[@]}"; do
         skip=
-
+        debug "i=${i}"
         for j in "${!applications_from_config_array[@]}"; do
-            if [[ "${applications_from_cli_array[${i}]}" == "${applications_from_config_array[${j}]}" ]]; then
+            result=$(expr match "${applications_from_config_array[${j}]}" "${applications_from_cli_array[${i}]}")
+            debug "result: ${result}"
+            if [[ ${result} -gt 0 ]]; then
                 skip=1
                 break
             fi
@@ -372,18 +377,42 @@ expected_applications() {
 
 ### Sort applications. Uses the applications.cfg order.
 sort_applications() {
-
     for i in "${!applications_from_config_array[@]}"; do
+        config_app="${applications_from_config_array[i]}"
+
+        if [[ $(echo "${applications_from_config_array[i]}" | grep ":") ]]; then
+            config_app=$(echo "${applications_from_config_array[i]}" | sed "s/:.*//")
+        fi
+
         for j in "${!applications_from_cli_array[@]}"; do
-            if [[ "${applications_from_config_array[${i}]}" == "${applications_from_cli_array[${j}]}" ]]; then
-                skip=1
-                order+=( "${applications_from_config_array[$i]}" )
+            cli_app="${applications_from_cli_array[j]}"
+            pl=
+
+            if [[ $(echo "${applications_from_cli_array[j]}" | grep ":") ]]; then
+                debug 35
+                cli_app=$(echo "${applications_from_cli_array[j]}" | sed "s/:.*//")
+                module_string=$(echo "${applications_from_cli_array[j]}" | sed "s/.*://")
+                pl=1
+            fi
+
+            debug "cli=${cli_app}, conf=${config_app}"
+
+            if [[ $(echo "${cli_app})" | grep "${config_app}") || $(echo "${config_app}" | grep "${cli_app}") ]]; then
+                debug 43
+                if [[ -n "${pl}" ]]; then
+                    debug "mod_str: ${module_string}"
+                    order+=( "${cli_app}:-pl ${module_string}" )
+                else
+                    order+=( "${applications_from_cli_array[$j]}" )
+                fi
                 break
             fi
+
         done
     done
 
-    unset "applications_from_config"
+    debug "order: ${order[@]}"
+    unset "applications_from_config_array"
     applications_from_config_array=( "${order[@]}" )
 }
 
@@ -452,6 +481,8 @@ application_folder_exists() {
 
 ### Build applications.
 build_applications() {
+    debug "Bygger ${applications_from_config_array[@]}"
+
     for i in "${!applications_from_config_array[@]}"; do
         [[ ${build_profile} == "-Pit" && "${skip_tests}" != "-DskipTests" ]] && test_string=" with integration tests " || test_string="" # TODD: Remove the test string
 
