@@ -2,7 +2,7 @@
 
 ## TODO: sanity check for profiles - How the hell do we do that?
 
-DEBUG=0
+DEBUG=1
 ### Arrays
 declare -A options
 declare -a error_list=()
@@ -244,20 +244,25 @@ parse_applications_from_config() {
     while read line || [[ -n "${line}" ]]; do
         parsed_line=$(printf "%s" "${line}" | sed "s/#.*$//" | xargs)
         if [[ -n "${parsed_line}" ]]; then
-            has_specified_modules=$(echo "${parsed_line}" | grep ":")
+            has_specified_modules=$(grep ":" <<< "${parsed_line}")
 
             if [[ -n "${has_specified_modules}" && "${has_specified_modules}" != "\n" ]]; then
                 string_remainder="$(echo "${parsed_line}" | sed "s/^.*://")"
-                modules=""
                 debug "String Remainder: ${string_remainder}"
-                module="${string_remainder:0:$(expr index ${string_remainder} ",")}"
+                modules=""
+
+                if [[ $(grep "," <<< "${string_remainder}") ]]; then
+                    module="${string_remainder:0:$(expr index ${string_remainder} ",")}"
+                else
+                    module="${string_remainder}"
+                fi
 
                 while [[ "${module}" ]]; do
                     modules+="${module}"
                     debug "modules: ${modules}"
                     string_remainder="${string_remainder#${module}}"
                     string_remainder="${string_remainder#,}"
-                    if [[ -n $(echo "${string_remainder}" | grep ",") ]]; then
+                    if [[ -n $(grep "," <<< "${string_remainder}") ]]; then
                         module="${string_remainder:0:$(expr index ${string_remainder} ",")}"
                     else
                         module=${string_remainder}
@@ -380,7 +385,7 @@ sort_applications() {
     for i in "${!applications_from_config_array[@]}"; do
         config_app="${applications_from_config_array[i]}"
 
-        if [[ $(echo "${applications_from_config_array[i]}" | grep ":") ]]; then
+        if [[ $(grep ":" <<< "${applications_from_config_array[i]}") ]]; then
             config_app=$(echo "${applications_from_config_array[i]}" | sed "s/:.*//")
         fi
 
@@ -388,7 +393,7 @@ sort_applications() {
             cli_app="${applications_from_cli_array[j]}"
             pl=
 
-            if [[ $(echo "${applications_from_cli_array[j]}" | grep ":") ]]; then
+            if [[ $(grep ":" <<< "${applications_from_cli_array[j]}") ]]; then
                 debug 35
                 cli_app=$(echo "${applications_from_cli_array[j]}" | sed "s/:.*//")
                 module_string=$(echo "${applications_from_cli_array[j]}" | sed "s/.*://")
@@ -397,7 +402,7 @@ sort_applications() {
 
             debug "cli=${cli_app}, conf=${config_app}"
 
-            if [[ $(echo "${cli_app})" | grep "${config_app}") || $(echo "${config_app}" | grep "${cli_app}") ]]; then
+            if [[ $(grep "${cli_app})" <<< "${config_app}") || $(grep "${config_app}" <<< "${cli_app}") ]]; then
                 debug 43
                 if [[ -n "${pl}" ]]; then
                     debug "mod_str: ${module_string}"
@@ -486,7 +491,7 @@ build_applications() {
     for i in "${!applications_from_config_array[@]}"; do
         [[ ${build_profile} == "-Pit" && "${skip_tests}" != "-DskipTests" ]] && test_string=" with integration tests " || test_string="" # TODD: Remove the test string
 
-        if [[ -n $(echo "${applications_from_config_array[${i}]}" | grep ":") ]]; then
+        if [[ -n $(grep ":" <<< "${applications_from_config_array[${i}]}") ]]; then
             application=$(echo "${applications_from_config_array[${i}]}" | sed "s/:.*//")
             specified_modules=$(echo "${applications_from_config_array[${i}]}" | sed "s/.*://g")
         else
