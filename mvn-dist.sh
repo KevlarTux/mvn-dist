@@ -2,7 +2,7 @@
 
 ## TODO: sanity check for profiles - How the hell do we do that?
 
-DEBUG=1
+DEBUG=0
 ### Arrays
 declare -A options
 declare -a error_list=()
