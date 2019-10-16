@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-## TODO: sanity check for profiles - How the hell do we do that?
-
 DEBUG=0
 ### Arrays
 declare -A options
@@ -50,7 +48,7 @@ declare -i skip_notification=0
 # Debug
 debug() {
     if [[ "${DEBUG}" -eq 1 ]]; then
-        array=( "$@" )
+        array=( "${@}" )
         for i in "${!array[@]}"; do
             printf "%s\\n" "${array[${i}]}"
         done
@@ -63,21 +61,37 @@ get_mvn_dist_home() {
     WD="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 }
 
-### Check if applications.cfg is available in $HOME
-look_for_cfg() {
+# Copy cfg to ${mvn_dist_home}
+copy_cfg() {
+    config_array=( "${@}" )
+    debug "${!config_array[@]}"
+
+    for i in "${!config_array[@]}"; do
+        printf "Copying ${WD}/${config_array[${i}]} to ${mvn_dist_home}\\n"
+        cp "${WD}/${config_array[${i}]}" "${mvn_dist_home}"
+    done
+}
+
+### Check if *.cfg is available in $HOME, copy if not
+find_or_copy_cfg() {
     if [[ -d "${mvn_dist_home}" ]]; then
+        copy_config_array=()
         if [[ ! -e "${mvn_dist_home}/${applications_cfg}" ]]; then
-            cp "${WD}/${applications_cfg}" "${mvn_dist_home}"
+            copy_config_array+=( "${applications_cfg}" )
         fi
         if [[ ! -e "${mvn_dist_home}/${settings_cfg}" ]]; then
-            cp "${WD}/${settings_cfg}" "${mvn_dist_home}"
+            copy_config_array+=( "${settings_cfg}" )
         fi
         if [[ ! -e "${mvn_dist_home}/${profiles_cfg}" ]]; then
-            cp "${WD}/${profiles_cfg}" "${mvn_dist_home}"
+            copy_config_array+=( "${profiles_cfg}" )
         fi
     else
         mkdir "${mvn_dist_home}"
-        cp "${WD}/${applications_cfg}" "${WD}/${profiles_cfg}" "${WD}/${settings_cfg}" "${mvn_dist_home}"
+        copy_config_array=( "${applications_cfg}" "${profiles_cfg}" "${settings_cfg}" )
+    fi
+
+    if [[ "${#copy_config_array[@]}" -gt 0 ]]; then
+        copy_cfg "${copy_config_array[@]}"
     fi
 
     applications_cfg="${mvn_dist_home}/${applications_cfg}"
@@ -97,7 +111,6 @@ read_profiles_cfg() {
         profiles+=( "${profile}" )
     done < "${profiles_cfg}"
 }
-
 
 ### Utility for formatting output
 calc_terminal_size() {
@@ -126,7 +139,7 @@ display_options() {
 
     debug "terminal_width:" "${terminal_width}" "${MAX_TERMINAL_WIDTH}" "42"
 
-    flag_length=25 # TODO: Maybe calculate tihs?
+    flag_length=28 # TODO: Maybe calculate this?
 
     for i in "${!options[@]}"; do
         printf "%-${flag_length}s" "${i}"
@@ -163,14 +176,13 @@ NO_APPLICATIONS="Could not find any applications to process. Skip -f|--force to 
 ### Tekststreng for bruk av scriptet - typisk usage()
 #read_usage() {
 read -r -d '' USAGE << EOM
-
-Bygger AKR-applikasjoner i angitt filsti eller nåværende mappe. Logger til\\n/tmp/akr-bygg.log eller /tmp/<akr-applikasjon>-bygg.log og /tmp/akr-bygg-error.log
+Builds maven projects in current folder or in folder specified.
 
 ${GREEN}Usage:${NO_COLOUR}
 mvn-dist [options]
 
 ${GREEN}Options:${NO_COLOUR}
-help=${display_options} && echo ${help}
+$(display_options)
 
 ${GREEN}Examples:${NO_COLOUR}
 Build all applications in /mnt/data/git
@@ -183,7 +195,7 @@ Build applications model, common and case, force to build in given order.
 ${BLUE}mvn-dist -a model,common,case -f${NO_COLOUR}
 
 Build an application with a custom name.
-${BLUE}mvn-dist -a akr-omniapplikasjon -f${NO_COLOUR}
+${BLUE}mvn-dist -a monolith -f${NO_COLOUR}
 
 Build all applications in /mnt/data/git with profile it,\\nContinue building the next application on build error and log separately.
 ${BLUE}mvn-dist -p /mnt/data/git -P it -c -l${NO_COLOUR}
@@ -199,13 +211,10 @@ applications.cfg and its siblings should be edited using a UNIX flavour due to M
 Consider using a terminal with a minimum width of 80 to get decently formatted output.
 
 ${GREEN}Configuration files:${NO_COLOUR}
-$HOME/.mvn-dist/applications.cfg
-$HOME/.mvn-dist/settings.cfg
-$HOME/.mvn-dist/profiles.cfg\\n\\n
+${mvn_dist_home}/${applications_cfg}
+${mvn_dist_home}/${settings_cfg}
+${mvn_dist_home}/${profiles_cfg}\\n\\n
 EOM
-
-#    return "${BRUK}"
-#}
 
 ### So shoot me
 read -r -d '' FIX << EOA
@@ -327,7 +336,6 @@ pad() {
 
 ### Manual
 usage() {
-    display_options
     printf "%b" "${USAGE}"
 }
 
@@ -650,7 +658,7 @@ display_summary() {
 
 #### Start script
 get_mvn_dist_home
-look_for_cfg
+find_or_copy_cfg
 read_settings_cfg
 calc_terminal_size
 read_profiles_cfg
