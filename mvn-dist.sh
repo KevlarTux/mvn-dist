@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-DEBUG=0
+DEBUG=1
 ### Arrays
 declare -A options
 declare -a error_list=()
@@ -64,7 +64,6 @@ get_mvn_dist_home() {
 # Copy cfg to ${mvn_dist_home}
 copy_cfg() {
     config_array=( "${@}" )
-    debug "${!config_array[@]}"
 
     for i in "${!config_array[@]}"; do
         printf "Copying ${WD}/${config_array[${i}]} to ${mvn_dist_home}\\n"
@@ -101,7 +100,6 @@ find_or_copy_cfg() {
 
 read_settings_cfg() {
   while IFS="=" read -r key value || [[ -n "${key}" ]]; do
-        debug "${key}=${value}"
         export "${key}=${value}"
   done < "${settings_cfg}"
 }
@@ -117,9 +115,22 @@ calc_terminal_size() {
     terminal_width=$(tput cols)
     terminal_width=$( ([[ "${terminal_width}" -le "${MAX_TERMINAL_WIDTH}" ]] && printf "%s" "${terminal_width}") || printf "%s" "${MAX_TERMINAL_WIDTH}")
     if [[ "${terminal_width}" -lt "${MIN_TERMINAL_WIDTH}" ]]; then
-        printf "The terminal needs a width of at least %s to give feedback in a meaningful format." "${MIN_TERMINAL_WIDTH}"
+        printf "The terminal needs a width of at least %s to give feedback in a meaningful format." "${MIN_TERMINAL_WIDTH}" # TODO: Error message?
         exit 1;
     fi
+}
+
+
+calc_flag_length() {
+    flag_length=0
+
+    for i in "${!options[@]}"; do
+        if [[ ${#i} -gt ${flag_length} ]]; then
+            flag_length=${#i}
+        fi
+    done
+
+    flag_length+=2
 }
 
 ### Options
@@ -137,9 +148,7 @@ display_options() {
                 ["-n, --do-not-disturb"]="Do not disturb when build is finished."
     )
 
-    debug "terminal_width:" "${terminal_width}" "${MAX_TERMINAL_WIDTH}" "42"
-
-    flag_length=28 # TODO: Maybe calculate this?
+    calc_flag_length
 
     for i in "${!options[@]}"; do
         printf "%-${flag_length}s" "${i}"
@@ -156,7 +165,6 @@ display_options() {
         printf "\\n\\n"
     done
 }
-
 
 ### Strings
 NO_COLOUR="\e[0m"
@@ -176,7 +184,7 @@ NO_APPLICATIONS="Could not find any applications to process. Skip -f|--force to 
 ### Tekststreng for bruk av scriptet - typisk usage()
 #read_usage() {
 read -r -d '' USAGE << EOM
-Builds maven projects in current folder or in folder specified.
+Builds maven projects in current or specified folder.
 
 ${GREEN}Usage:${NO_COLOUR}
 mvn-dist [options]
@@ -206,7 +214,7 @@ If utilizing --continue-on-error you should consider splitting logs using --spli
 Add applications to build in applications.cfg
 Add build profiles in profiles.cfg
 
-${GREEN}Known issues:${NO_COLOUR}
+${GREEN}Known issues and quirks:${NO_COLOUR}
 applications.cfg and its siblings should be edited using a UNIX flavour due to MS' new-line challenges.
 Consider using a terminal with a minimum width of 80 to get decently formatted output.
 
@@ -257,7 +265,6 @@ parse_applications_from_config() {
 
             if [[ -n "${has_specified_modules}" && "${has_specified_modules}" != "\n" ]]; then
                 string_remainder="$(echo "${parsed_line}" | sed "s/^.*://")"
-                debug "String Remainder: ${string_remainder}"
                 modules=""
 
                 if [[ $(grep "," <<< "${string_remainder}") ]]; then
@@ -268,7 +275,6 @@ parse_applications_from_config() {
 
                 while [[ "${module}" ]]; do
                     modules+="${module}"
-                    debug "modules: ${modules}"
                     string_remainder="${string_remainder#${module}}"
                     string_remainder="${string_remainder#,}"
                     if [[ -n $(grep "," <<< "${string_remainder}") ]]; then
@@ -277,7 +283,6 @@ parse_applications_from_config() {
                         module=${string_remainder}
                     fi
                 done
-                debug "Modules: ${modules}"
                 main_module=$(echo "${parsed_line}" | sed "s/:.*$//")
                 applications_from_config_array+=( "${main_module}:-pl ${modules}" )
             else
@@ -286,7 +291,6 @@ parse_applications_from_config() {
         fi
 
     done < "${applications_cfg}"
-    debug "${applications_from_config_array[@]}"
 }
 
 ### Layout functions
@@ -367,14 +371,11 @@ parse_applications_from_cli() {
 ### Declare difference between expected and actual applications as an array
 expected_applications() {
     application_difference_array=()
-    debug 131313
 
     for i in "${!applications_from_cli_array[@]}"; do
         skip=
-        debug "i=${i}"
-        for j in "${!applications_from_config_array[@]}"; do
+        for i in "${!applications_from_config_array[@]}"; do
             result=$(expr match "${applications_from_config_array[${j}]}" "${applications_from_cli_array[${i}]}")
-            debug "result: ${result}"
             if [[ ${result} -gt 0 ]]; then
                 skip=1
                 break
@@ -388,8 +389,37 @@ expected_applications() {
     declare -a application_difference
 }
 
+
+handle_submodules() {
+   local i;
+
+   for i in "${!applications_from_cli_array[@]}"; do
+        cli_app="${applications_from_cli_array[i]}"
+        pl=
+
+        if [[ $(grep ":" <<< "${applications_from_cli_array[i]}") ]]; then
+            cli_app=$(echo "${applications_from_cli_array[i]}" | sed "s/:.*//")
+            module_string=$(echo "${applications_from_cli_array[i]}" | sed "s/.*://")
+            pl=1
+        fi
+
+        if [[ $(grep "${cli_app})" <<< "${config_app}") || $(grep "${config_app}" <<< "${cli_app}") ]]; then
+            if [[ -n "${pl}" ]]; then
+                order+=( "${cli_app}:-pl ${module_string}" )
+            else
+                order+=( "${applications_from_cli_array[$i]}" )
+            fi
+            break
+        fi
+
+    done
+}
+
+
 ### Sort applications. Uses the applications.cfg order.
 sort_applications() {
+    local i;
+
     for i in "${!applications_from_config_array[@]}"; do
         config_app="${applications_from_config_array[i]}"
 
@@ -397,34 +427,10 @@ sort_applications() {
             config_app=$(echo "${applications_from_config_array[i]}" | sed "s/:.*//")
         fi
 
-        for j in "${!applications_from_cli_array[@]}"; do
-            cli_app="${applications_from_cli_array[j]}"
-            pl=
+        handle_submodules
 
-            if [[ $(grep ":" <<< "${applications_from_cli_array[j]}") ]]; then
-                debug 35
-                cli_app=$(echo "${applications_from_cli_array[j]}" | sed "s/:.*//")
-                module_string=$(echo "${applications_from_cli_array[j]}" | sed "s/.*://")
-                pl=1
-            fi
-
-            debug "cli=${cli_app}, conf=${config_app}"
-
-            if [[ $(grep "${cli_app})" <<< "${config_app}") || $(grep "${config_app}" <<< "${cli_app}") ]]; then
-                debug 43
-                if [[ -n "${pl}" ]]; then
-                    debug "mod_str: ${module_string}"
-                    order+=( "${cli_app}:-pl ${module_string}" )
-                else
-                    order+=( "${applications_from_cli_array[$j]}" )
-                fi
-                break
-            fi
-
-        done
     done
 
-    debug "order: ${order[@]}"
     unset "applications_from_config_array"
     applications_from_config_array=( "${order[@]}" )
 }
@@ -494,8 +500,6 @@ application_folder_exists() {
 
 ### Build applications.
 build_applications() {
-    debug "Bygger ${applications_from_config_array[@]}"
-
     for i in "${!applications_from_config_array[@]}"; do
         [[ ${build_profile} == "-Pit" && "${skip_tests}" != "-DskipTests" ]] && test_string=" with integration tests " || test_string="" # TODD: Remove the test string
 
@@ -509,11 +513,8 @@ build_applications() {
         build_parameters=""
 
         [[ -n "${build_profile}" ]] && build_parameters+="${build_profile} "
-        debug 11 "${build_parameters}"
         [[ -n "${specified_modules}" ]] && build_parameters+="${specified_modules} "
-        debug 12 "${build_parameters}"
         [[ -n "${skip_tests}" ]] && build_parameters+="${skip_tests}"
-        debug 13 "${build_parameters}"
 
         application_path="${absolute_path}/${application}"
 
@@ -524,7 +525,6 @@ build_applications() {
             log="/tmp/${application}-build.log"
         fi
 
-        debug "${application_path}"
         ### Check if application directory exists
         if [[ -d  "${application_path}" ]]; then
 
@@ -541,7 +541,6 @@ build_applications() {
                 fi
                 spin_cursor
             else
-                debug 42 "${build_parameters}"
                 if [[ -n "${build_parameters}" ]]; then
                     mvn clean install ${build_parameters} > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
                 else
