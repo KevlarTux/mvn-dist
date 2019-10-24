@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 
 DEBUG=1
+### Functions
+declare -f move_cursor_up
+declare -f move_cursor_down
+declare -f move_cursor_forward
+declare -f move_cursor_backward
+declare -f save_cursor_position
+declare -f recall_cursor_position
+declare -f delete_until_eol
+
 ### Arrays
 declare -A options
 declare -a error_list=()
@@ -9,9 +18,11 @@ declare -a applications_from_cli_array=()
 declare -a applications_from_config_array=()
 declare -a application_difference_array=()
 declare -a profiles=()
+
 ### Strings
 declare ERROR_MSG=""
 declare MVN_DIST_LOG=""
+declare config_app=""
 declare build_profile=""
 declare log="/tmp/mvn-dist.log"
 declare error_log="/tmp/mvn-dist-error.log"
@@ -27,6 +38,23 @@ declare mvn_dist_home="${HOME}/.mvn-dist"
 declare pretty_print=""
 declare available_options_string=""
 declare specified_modules=""
+declare check_diff_application=""
+# From strings.sh, declare to satisfy symtax validation
+declare NO_COLOUR=""
+declare RED=""
+declare GREEN=""
+declare BLUE=""
+declare BOLD=""
+declare BLINK=""
+declare UNKNOWN_PROFILE=""
+declare BUILD_FAILURE=""
+declare PERMISSIONS=""
+declare NOT_FOUND=""
+declare INVALID_PATH=""
+declare NO_APPLICATIONS=""
+declare USAGE=""
+declare FIX=""
+
 ### Integers
 declare -i START_TIME=$SECONDS
 declare -i LOG_TAIL_LENGTH
@@ -38,6 +66,7 @@ declare -i miscellaneous_text_length=8
 declare -i error_count=0
 declare -i build_count=0
 declare -i pid
+
 ### Boolean Simulator
 declare -i verbose=0
 declare -i force=0
@@ -59,6 +88,12 @@ debug() {
 get_mvn_dist_home() {
     path=$(pwd)
     WD="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+}
+
+# Source dependencies
+source_dependencies() {
+    . "${WD}/strings.sh"
+    . "${WD}/functions.sh"
 }
 
 # Copy cfg to ${mvn_dist_home}
@@ -166,96 +201,6 @@ display_options() {
     done
 }
 
-### Strings
-NO_COLOUR="\e[0m"
-RED="\e[0;031m"
-GREEN="\e[0;32m"
-BLUE="\e[96m"
-BOLD="\e[1m"
-BLINK="\e[5m"
-
-UNKNOWN_PROFILE="Unknown maven profile. Please refer to profiles.cfg for valid options."
-BUILD_FAILURE="Build failure. Please check the logs for further details."
-PERMISSIONS="Unable to access specified directory. Please check the permisions."
-NOT_FOUND="Could not find specified application folder."
-INVALID_PATH="Could not find specified directory. Please validate specified options."
-NO_APPLICATIONS="Could not find any applications to process. Skip -f|--force to build default applications from applications.cfg."
-
-### Tekststreng for bruk av scriptet - typisk usage()
-#read_usage() {
-read -r -d '' USAGE << EOM
-Builds maven projects in current or specified folder.
-
-${GREEN}Usage:${NO_COLOUR}
-mvn-dist [options]
-
-${GREEN}Options:${NO_COLOUR}
-$(display_options)
-
-${GREEN}Examples:${NO_COLOUR}
-Build all applications in /mnt/data/git
-${BLUE}mvn-dist -p /mnt/data/git${NO_COLOUR}
-
-Build only application named model without integration tests.
-${BLUE}mvn-dist --skip-tests -a model${NO_COLOUR}
-
-Build applications model, common and case, force to build in given order.
-${BLUE}mvn-dist -a model,common,case -f${NO_COLOUR}
-
-Build an application with a custom name.
-${BLUE}mvn-dist -a monolith -f${NO_COLOUR}
-
-Build all applications in /mnt/data/git with profile it,\\nContinue building the next application on build error and log separately.
-${BLUE}mvn-dist -p /mnt/data/git -P it -c -l${NO_COLOUR}
-
-${GREEN}Tip:${NO_COLOUR}
-Use short flags when you need tab completion.
-If utilizing --continue-on-error you should consider splitting logs using --split-logs.
-Add applications to build in applications.cfg
-Add build profiles in profiles.cfg
-
-${GREEN}Known issues and quirks:${NO_COLOUR}
-applications.cfg and its siblings should be edited using a UNIX flavour due to MS' new-line challenges.
-Consider using a terminal with a minimum width of 80 to get decently formatted output.
-
-${GREEN}Configuration files:${NO_COLOUR}
-${mvn_dist_home}/${applications_cfg}
-${mvn_dist_home}/${settings_cfg}
-${mvn_dist_home}/${profiles_cfg}\\n\\n
-EOM
-
-### So shoot me
-read -r -d '' FIX << EOA
-\\n
-           ▄▄▄▄▄▄▄▄▄▄▄▄▄
-        ▄▀▀             ▀▀▄
-       █                   █
-      █                     █
-     █   ▄▄▄▄▄▄▄   ▄▄▄▄▄▄▄   █
-    █   █████████ █████████   █
-    █ ██▀    ▀█████▀    ▀██  █
-   ██████   █▀█ ███   █▀█ ██████
-   ██████   ▀▀▀ ███   ▀▀▀ ██████
-    █  ▀█     ▄██ ██▄    ▄█▀  █
-    █    ▀█████▀   ▀█████▀    █
-    █               ▄▄▄       █
-    █       ▄▄▄▄██▀▀█▀▀█▄     █
-    █     ▄██▄█▄▄█▄▄█▄▄██▄    █
-    █     ▀▀█████████████▀    █
-   ▐▓▓▌                     ▐▓▓▌
-   ▐▐▓▓▌▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐▓▓▌▌
-   █══▐▓▄▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▄▓▌══█
-  █══▌═▐▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▌═▐══█
-  █══█═▐▓▓▓▓▓▓▄▄▄▄▄▄▄▓▓▓▓▓▓▌═█══█
-  █══█═▐▓▓▓▓▓▓▐██▀██▌▓▓▓▓▓▓▌═█══█
-  █══█═▐▓▓▓▓▓▓▓▀▀▀▀▀▓▓▓▓▓▓▓▌═█══█
-
-  █   █ █  █ █▀▀█ ▀▀█▀▀ ▀█ █ ▀█
-  █▄█▄█ █▀▀█ █▄▄█   █   █▀ ▀ █▀
-   ▀ ▀  ▀  ▀ ▀  ▀   ▀   ▄  ▄ ▄\\n\\n\\n
-
-EOA
-
 ### Read applications.cfg, declare as an array
 parse_applications_from_config() {
     while read line || [[ -n "${line}" ]]; do
@@ -293,36 +238,6 @@ parse_applications_from_config() {
     done < "${applications_cfg}"
 }
 
-### Layout functions
-move_cursor_up() {
-    printf "\\033[%qA" "${1}"
-}
-
-move_cursor_down() {
-    printf "\\033[%qB" "${1}"
-}
-
-move_cursor_forward() {
-    printf "\\033[%qC" "${1}"
-}
-
-move_cursor_backward() {
-    printf "\\033[%qD" "${1}"
-}
-
-save_cursor_position() {
-    printf "\\033[s"
-}
-
-recall_cursor_position() {
-    printf "\\033[u"
-}
-
-delete_until_end_of_line() {
-    printf "\\033[0K"
-}
-### /Layout functions
-
 ### Generic warning function
 print_warning() {
     printf "\\n%b*** %s *** %b\\n\\n" "${RED}" "${1}" "${NO_COLOUR}"
@@ -348,7 +263,7 @@ parse_applications_from_cli() {
     IFS=',' read -r -a applications_from_cli_array <<< "${1}"
 
     if [[ "${force}" -eq 0 ]];then
-        expected_applications
+        compare_applications
 
         if [[ "${#application_difference_array[@]}" -gt 0 ]]; then
             print_warning "$(printf "Ukjent applikasjon %s" "${application_difference_array[*]}")"
@@ -367,23 +282,28 @@ parse_applications_from_cli() {
     fi
 }
 
+find_application_difference() {
+    local i
+    skip=
+    for i in "${!applications_from_config_array[@]}"; do
+        result=$(expr match "${applications_from_config_array[${i}]}" "${check_diff_application}")
+        if [[ ${result} -gt 0 ]]; then
+            skip=1
+            break
+        fi
+    done
+
+    [[ -n ${skip} ]] || application_difference+=( "${check_diff_application}" )
+}
 
 ### Declare difference between expected and actual applications as an array
-expected_applications() {
+compare_applications() {
+    local i
     application_difference_array=()
 
     for i in "${!applications_from_cli_array[@]}"; do
-        skip=
-        for i in "${!applications_from_config_array[@]}"; do
-            result=$(expr match "${applications_from_config_array[${j}]}" "${applications_from_cli_array[${i}]}")
-            if [[ ${result} -gt 0 ]]; then
-                skip=1
-                break
-            fi
-        done
-
-        [[ -n ${skip} ]] || application_difference+=( "${applications_from_cli_array[$i]}" )
-
+        check_diff_application="${applications_from_cli_array[${i}]}"
+        find_application_difference
     done
 
     declare -a application_difference
@@ -498,33 +418,64 @@ application_folder_exists() {
     absolute_path="$(pwd)"
 }
 
+prepare_build() {
+    [[ ${build_profile} == "-Pit" && "${skip_tests}" != "-DskipTests" ]] && test_string=" with integration tests " || test_string="" # TODD: Remove the test string
+
+    if [[ -n $(grep ":" <<< "${applications_from_config_array[${i}]}") ]]; then
+        application=$(echo "${applications_from_config_array[${i}]}" | sed "s/:.*//")
+        specified_modules=$(echo "${applications_from_config_array[${i}]}" | sed "s/.*://g")
+    else
+        application="${applications_from_config_array[${i}]}"
+    fi
+
+    build_parameters=""
+
+    [[ -n "${build_profile}" ]] && build_parameters+="${build_profile} "
+    [[ -n "${specified_modules}" ]] && build_parameters+="${specified_modules} "
+    [[ -n "${skip_tests}" ]] && build_parameters+="${skip_tests}"
+
+    application_path="${absolute_path}/${application}"
+
+    build_text=$(printf "* Build %s" "${test_string}")
+    truncate_application_name
+
+    if [[ "${split_log}" -eq 1 ]]; then
+        log="/tmp/${application}-build.log"
+    fi
+
+}
+
+build_with_spinner() {
+    printf "* Build %b%s%b%s" "${GREEN}" "${pretty_print}" "${NO_COLOUR}" "${test_string}"
+    if [[ -n "${build_parameters}" ]]; then
+        mvn clean install ${build_parameters} 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
+    else
+        mvn clean install 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
+    fi
+    spin_cursor
+}
+
+build_verbose() {
+    if [[ -n "${build_parameters}" ]]; then
+        mvn clean install ${build_parameters} > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
+    else
+        mvn clean install > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
+        mvn clean install > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
+    fi
+    if ! wait "${pid}"; then
+        if [[ "${continue}" -ne 1 ]]; then
+            print_warning "${BUILD_FAILURE}" && exit 1
+        else
+            error_list["${error_count}"]="\\n\\nApplication:\\t${application}\nLog:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
+            error_count=$(( error_count+1 ))
+        fi
+    fi
+}
+
 ### Build applications.
 build_applications() {
     for i in "${!applications_from_config_array[@]}"; do
-        [[ ${build_profile} == "-Pit" && "${skip_tests}" != "-DskipTests" ]] && test_string=" with integration tests " || test_string="" # TODD: Remove the test string
-
-        if [[ -n $(grep ":" <<< "${applications_from_config_array[${i}]}") ]]; then
-            application=$(echo "${applications_from_config_array[${i}]}" | sed "s/:.*//")
-            specified_modules=$(echo "${applications_from_config_array[${i}]}" | sed "s/.*://g")
-        else
-            application="${applications_from_config_array[${i}]}"
-        fi
-
-        build_parameters=""
-
-        [[ -n "${build_profile}" ]] && build_parameters+="${build_profile} "
-        [[ -n "${specified_modules}" ]] && build_parameters+="${specified_modules} "
-        [[ -n "${skip_tests}" ]] && build_parameters+="${skip_tests}"
-
-        application_path="${absolute_path}/${application}"
-
-        build_text=$(printf "* Build %s" "${test_string}")
-        truncate_application_name
-
-        if [[ "${split_log}" -eq 1 ]]; then
-            log="/tmp/${application}-build.log"
-        fi
-
+        prepare_build
         ### Check if application directory exists
         if [[ -d  "${application_path}" ]]; then
 
@@ -533,34 +484,17 @@ build_applications() {
 
             ### Spinner or full maven output
             if [[ "${verbose}" -eq 0 ]]; then
-                printf "* Build %b%s%b%s" "${GREEN}" "${pretty_print}" "${NO_COLOUR}" "${test_string}"
-                if [[ -n "${build_parameters}" ]]; then
-                    mvn clean install ${build_parameters} 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
-                else
-                    mvn clean install 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
-                fi
-                spin_cursor
+                build_with_spinner
             else
-                if [[ -n "${build_parameters}" ]]; then
-                    mvn clean install ${build_parameters} > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
-                else
-                    mvn clean install > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
-                    mvn clean install > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
-                fi
-                if ! wait "${pid}"; then
-                    if [[ "${continue}" -ne 1 ]]; then
-                        print_warning "${BUILD_FAILURE}" && exit 1
-                    else
-                        error_list["${error_count}"]="\\n\\nApplication:\\t${application}\nLog:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
-                        error_count=$(( error_count+1 ))
-                    fi
-                fi
+                build_verbose
             fi
+
             build_count=$(( build_count + 1 ))
         else
             printf "* Build failure: %s" "${application}"
             print_warning "${NOT_FOUND}"
         fi
+
         unset specified_modules
         unset build_parameters
     done
@@ -580,6 +514,27 @@ truncate_application_name() {
     fi
 }
 
+check_for_failure() {
+    if ! wait "${pid}"; then
+        move_cursor_backward 2
+        delete_until_eol
+        printf "%b%s%b" "${RED}${BLINK}${BOLD}" "!!" "${NO_COLOUR}\\n"
+
+        if [[ "${continue}" -ne 1 ]]; then
+            printf "\\n\\n"
+            tail -n "${LOG_TAIL_LENGTH}" "${log}"
+            print_warning "${BUILD_FAILURE}" && exit 1
+        else
+            error_list[$error_count]="\\n\\nApplikasjon:\\t${application}\nLogg:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
+            error_count=$(( error_count+1 ))
+        fi
+
+    else
+        move_cursor_backward 2
+        delete_until_eol
+        printf "%b%s%b" "${GREEN}${BOLD}" "OK" "${NO_COLOUR}\\n"
+    fi
+}
 
 ### Spin functionality
 spin_cursor() {
@@ -602,25 +557,7 @@ spin_cursor() {
     printf "%b" "${NO_COLOUR}"
 
     ### check if build failed
-    if ! wait "${pid}"; then
-        move_cursor_backward 2
-        delete_until_end_of_line
-        printf "%b%s%b" "${RED}${BLINK}${BOLD}" "!!" "${NO_COLOUR}\\n"
-
-        if [[ "${continue}" -ne 1 ]]; then
-            printf "\\n\\n"
-            tail -n "${LOG_TAIL_LENGTH}" "${log}"
-            print_warning "${BUILD_FAILURE}" && exit 1
-        else
-            error_list[$error_count]="\\n\\nApplikasjon:\\t${application}\nLogg:\\t\\t${BOLD}${BLUE}${log}${NO_COLOUR}"
-            error_count=$(( error_count+1 ))
-        fi
-
-    else
-        move_cursor_backward 2
-        delete_until_end_of_line
-        printf "%b%s%b" "${GREEN}${BOLD}" "OK" "${NO_COLOUR}\\n"
-    fi
+    check_for_failure
 }
 
 ### Generates error message(s)
@@ -657,6 +594,7 @@ display_summary() {
 
 #### Start script
 get_mvn_dist_home
+source_dependencies
 find_or_copy_cfg
 read_settings_cfg
 calc_terminal_size
