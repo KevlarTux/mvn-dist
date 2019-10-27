@@ -87,7 +87,7 @@ debug() {
 ### Get working directory
 get_mvn_dist_home() {
     path=$(pwd)
-    WD="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+    WD="$( cd $( dirname $( readlink -f ${BASH_SOURCE[0]} ) ) && pwd )"
 }
 
 # Source dependencies
