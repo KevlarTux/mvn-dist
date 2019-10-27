@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-DEBUG=1
+DEBUG=0
 ### Functions
 declare -f move_cursor_up
 declare -f move_cursor_down
@@ -22,6 +22,7 @@ declare -a profiles=()
 ### Strings
 declare ERROR_MSG=""
 declare MVN_DIST_LOG=""
+declare MVN_DIST_TMP_FILE=""
 declare config_app=""
 declare build_profile=""
 declare log="/tmp/mvn-dist.log"
@@ -54,6 +55,7 @@ declare INVALID_PATH=""
 declare NO_APPLICATIONS=""
 declare USAGE=""
 declare FIX=""
+declare HELP=""
 
 ### Integers
 declare -i START_TIME=$SECONDS
@@ -61,7 +63,7 @@ declare -i LOG_TAIL_LENGTH
 declare -i MAX_TERMINAL_WIDTH
 declare -i MIN_TERMINAL_WIDTH
 declare -i terminal_width=80
-declare -i flag_length=25
+declare -i flag_length=0
 declare -i miscellaneous_text_length=8
 declare -i error_count=0
 declare -i build_count=0
@@ -85,15 +87,19 @@ debug() {
 }
 
 ### Get working directory
-get_mvn_dist_home() {
+get_mvn_dist_path() {
     path=$(pwd)
     WD="$( cd $( dirname $( readlink -f ${BASH_SOURCE[0]} ) ) && pwd )"
 }
 
 # Source dependencies
 source_dependencies() {
-    . "${WD}/strings.sh"
     . "${WD}/functions.sh"
+    eval $( cat "${mvn_dist_home}/settings.cfg" )
+}
+
+source_strings() {
+    . "${WD}/strings.sh"
 }
 
 # Copy cfg to ${mvn_dist_home}
@@ -133,12 +139,6 @@ find_or_copy_cfg() {
     profiles_cfg="${mvn_dist_home}/${profiles_cfg}"
 }
 
-read_settings_cfg() {
-  while IFS="=" read -r key value || [[ -n "${key}" ]]; do
-        export "${key}=${value}"
-  done < "${settings_cfg}"
-}
-
 read_profiles_cfg() {
     while read profile || [[ -n "${profile}" ]]; do
         profiles+=( "${profile}" )
@@ -148,7 +148,8 @@ read_profiles_cfg() {
 ### Utility for formatting output
 calc_terminal_size() {
     terminal_width=$(tput cols)
-    terminal_width=$( ([[ "${terminal_width}" -le "${MAX_TERMINAL_WIDTH}" ]] && printf "%s" "${terminal_width}") || printf "%s" "${MAX_TERMINAL_WIDTH}")
+    terminal_width=$( [[ "${terminal_width}" -le "${MAX_TERMINAL_WIDTH}" ]] && printf "%s" "${terminal_width}" || printf "%s" "${MAX_TERMINAL_WIDTH}" )
+
     if [[ "${terminal_width}" -lt "${MIN_TERMINAL_WIDTH}" ]]; then
         printf "The terminal needs a width of at least %s to give feedback in a meaningful format." "${MIN_TERMINAL_WIDTH}" # TODO: Error message?
         exit 1;
@@ -171,20 +172,22 @@ calc_flag_length() {
 ### Options
 display_options() {
     options=(
-                ["-P, --profile"]="One of the profiles provided in profiles.cfg"
+                ["-P, --profile"]="One of the profiles provided in profiles.cfg."
                 ["-p, --path=/path/to/source"]="Path to the folder holding the applications to build."
                 ["-a, --applications"]="Comma separated list of applications to build."
                 ["-f, --force"]="Force mvn-dist to build applications provided by -a|--applications in given order. This also supports custom names of folders holding the applications."
                 ["-s, --skip-tests"]="Do not run integration tests."
                 ["-c, --continue-on-error"]="Continue building the next application on build failure."
                 ["-l, --split-logs"]="Split log for each application. Makes sense when utilizing -c|--continue-on-error."
-                ["-v, --verbose"]="Print full Maven output"
+                ["-v, --verbose"]="Print full Maven output."
                 ["-h, --help"]="This help page."
+                ["-e, --examples"]="Show usage examples."
                 ["-n, --do-not-disturb"]="Do not disturb when build is finished."
     )
 
     calc_flag_length
 
+    debug "terminal width in parse: ${terminal_width}"
     for i in "${!options[@]}"; do
         printf "%-${flag_length}s" "${i}"
         width=$(( terminal_width - flag_length ))
@@ -197,7 +200,7 @@ display_options() {
                 width=$(( terminal_width - flag_length - ${#word} ))
             fi
         done <<< "${options[${i}]}"
-        printf "\\n\\n"
+        printf "\\n"
     done
 }
 
@@ -256,6 +259,11 @@ pad() {
 ### Manual
 usage() {
     printf "%b" "${USAGE}"
+}
+
+###
+mvn_dist_help() {
+    printf "%b" "${HELP}"
 }
 
 ### Parse cli applications.
@@ -378,7 +386,7 @@ calc_time_spent() {
 
 ### Parse options, assign values to variables.
 parse_options_and_initalize_values() {
-    available_options_string=$(getopt -o "sa:vzchfblnp:P:" -l "skip-tests,fix-bugs,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applications:,help" -- "$@")
+    available_options_string=$(getopt -o "esa:vzchfblnp:P:" -l "examples,skip-tests,fix-bugs,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applications:,help" -- "$@")
     eval set -- "${available_options_string}"
 
     while [[ $# -gt 0 ]]; do
@@ -393,7 +401,8 @@ parse_options_and_initalize_values() {
             -c|--continue-on-error) continue=1 ; shift ;;
             -b|--fix-bugs) printf "%b" "${FIX}" && exit 0 ;;
             -v|--verbose) verbose=1 ; shift ;;
-            -h|--help) usage && exit 0 ;;
+            -h|--help) mvn_dist_help && exit 0 ;;
+            -e|--eamples) usage && exit 0 ;;
             --) shift ; break ;;
             *) printf "%s" "$0: Error... Unknown flag. $1" 1>&2; exit 1 ;;
         esac
@@ -593,13 +602,13 @@ display_summary() {
 }
 
 #### Start script
-get_mvn_dist_home
+get_mvn_dist_path
 source_dependencies
 find_or_copy_cfg
-read_settings_cfg
 calc_terminal_size
 read_profiles_cfg
 parse_applications_from_config
+source_strings
 parse_options_and_initalize_values "$@"
 initalize_cursor_position
 application_parsed_from_cli

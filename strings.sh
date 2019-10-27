@@ -15,8 +15,8 @@ NOT_FOUND="Could not find specified application folder."
 INVALID_PATH="Could not find specified directory. Please validate specified options."
 NO_APPLICATIONS="Could not find any applications to process. Skip -f|--force to build default applications from applications.cfg."
 
-### Tekststreng for bruk av scriptet - typisk usage()
-read -r -d '' USAGE << EOM
+### Tekststrenger for bruk av scriptet - typisk usage()
+read -r -d '' HELP << EOM
 Builds maven projects in current or specified folder.
 
 ${GREEN}Usage:${NO_COLOUR}
@@ -24,6 +24,12 @@ mvn-dist [options]
 
 ${GREEN}Options:${NO_COLOUR}
 $(display_options)
+\\n
+EOM
+
+read -r -d '' USAGE << EOM
+${GREEN}Usage:${NO_COLOUR}
+mvn-dist [options]
 
 ${GREEN}Examples:${NO_COLOUR}
 Build all applications in /mnt/data/git
@@ -52,9 +58,9 @@ applications.cfg and its siblings should be edited using a UNIX flavour due to M
 Consider using a terminal with a minimum width of 80 to get decently formatted output.
 
 ${GREEN}Configuration files:${NO_COLOUR}
-${mvn_dist_home}/${applications_cfg}
-${mvn_dist_home}/${settings_cfg}
-${mvn_dist_home}/${profiles_cfg}\\n\\n
+${applications_cfg}
+${settings_cfg}
+${profiles_cfg}\\n
 EOM
 
 ### So shoot me
