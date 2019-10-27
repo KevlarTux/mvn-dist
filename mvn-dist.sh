@@ -209,30 +209,32 @@ parse_applications_from_config() {
     while read line || [[ -n "${line}" ]]; do
         parsed_line=$(printf "%s" "${line}" | sed "s/#.*$//" | xargs)
         if [[ -n "${parsed_line}" ]]; then
-            has_specified_modules=$(grep ":" <<< "${parsed_line}")
+            has_specified_submodules=$(grep ":" <<< "${parsed_line}")
 
-            if [[ -n "${has_specified_modules}" && "${has_specified_modules}" != "\n" ]]; then
+            if [[ -n "${has_specified_submodules}" && "${has_specified_submodules}" != "\\n" ]]; then
                 string_remainder="$(echo "${parsed_line}" | sed "s/^.*://")"
-                modules=""
+                submodules=""
 
                 if [[ $(grep "," <<< "${string_remainder}") ]]; then
-                    module="${string_remainder:0:$(expr index ${string_remainder} ",")}"
+                    submodule="${string_remainder:0:$(expr index ${string_remainder} ",")}"
                 else
-                    module="${string_remainder}"
+                    submodule="${string_remainder}"
                 fi
 
-                while [[ "${module}" ]]; do
-                    modules+="${module}"
-                    string_remainder="${string_remainder#${module}}"
+                while [[ "${submodule}" ]]; do
+                    submodules+="${submodule}"
+                    string_remainder="${string_remainder#${submodule}}"
                     string_remainder="${string_remainder#,}"
+
                     if [[ -n $(grep "," <<< "${string_remainder}") ]]; then
-                        module="${string_remainder:0:$(expr index ${string_remainder} ",")}"
+                        submodule="${string_remainder:0:$(expr index ${string_remainder} ",")}"
                     else
-                        module=${string_remainder}
+                        submodule=${string_remainder}
                     fi
                 done
+
                 main_module=$(echo "${parsed_line}" | sed "s/:.*$//")
-                applications_from_config_array+=( "${main_module}:-pl ${modules}" )
+                applications_from_config_array+=( "${main_module}:-pl ${submodules}" )
             else
                 applications_from_config_array+=( "${parsed_line}" )
             fi
@@ -509,7 +511,7 @@ build_applications() {
     done
 }
 
-### Utility function for displaying output.
+### Utility function for formatting output.
 truncate_application_name() {
     max_length=$(( terminal_width - $(( ${#build_text} + 6 )) ))
 
