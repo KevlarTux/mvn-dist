@@ -391,7 +391,7 @@ calc_time_spent() {
         MINUTE_STRING="${MINUTES_SPENT} minutes"
     fi
 
-    [[ -n ${SECOND_STRING} && -n ${MINUTE_STRING} ]] && MINUTE_STRING="${MINUTE_STRING} og "
+    [[ -n ${SECOND_STRING} && -n ${MINUTE_STRING} ]] && MINUTE_STRING="${MINUTE_STRING} and "
 }
 
 ### Parse options, assign values to variables.
@@ -602,7 +602,7 @@ display_summary() {
     if [[ "${build_count}" -gt 0 ]]; then
         command -v notify-send > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Build completed" "Build took \\n<i>${MINUTE_STRING}${SECOND_STRING}</i>")
         command -v osascript > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && osascript -e "display notification \"Build took ${MINUTE_STRING}${SECOND_STRING}\" with title \"Build completed\"")
-        printf "%b%b%s%b%b" "\n\n" "${GREEN}${BOLD}" "Build completed" "${NO_COLOUR}" " after ${MINUTE_STRING}${SECOND_STRING}${ERROR_MSG}\\n\\n"
+        printf "%b%b%s%b%b" "\n\n" "${GREEN}${BOLD}" "Build completed" "${NO_COLOUR}" " in ${MINUTE_STRING}${SECOND_STRING}${ERROR_MSG}\\n\\n"
     else
         command -v notify-send > /dev/null 2>&1 && [[ ${skip_notification} -eq 0 ]] && notify-send -u normal -t 10000 -i terminal "Done" "Found zero applications to build"
         command -v osascript > /dev/null 2>&1 && ([[ ${skip_notification} -eq 0 ]] && osascript -e "display notification \"Found zero applications to build...\" with title \"Build completed\"")
