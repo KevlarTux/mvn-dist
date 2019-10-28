@@ -10,8 +10,10 @@ declare -f save_cursor_position
 declare -f recall_cursor_position
 declare -f delete_until_eol
 
-### Arrays
+### Associative arrays
 declare -A options
+
+### Regular, boring arrays
 declare -a error_list=()
 declare -a order=()
 declare -a applications_from_cli_array=()
@@ -23,6 +25,7 @@ declare -a profiles=()
 declare ERROR_MSG=""
 declare MVN_DIST_LOG=""
 declare MVN_DIST_TMP_FILE=""
+declare MVN_BINARY=""
 declare config_app=""
 declare build_profile=""
 declare log="/tmp/mvn-dist.log"
@@ -40,7 +43,8 @@ declare pretty_print=""
 declare available_options_string=""
 declare specified_modules=""
 declare check_diff_application=""
-# From strings.sh, declare to satisfy symtax validation
+
+# From strings.sh, declare to satisfy syntax validation
 declare NO_COLOUR=""
 declare RED=""
 declare GREEN=""
@@ -96,6 +100,10 @@ get_mvn_dist_path() {
 source_dependencies() {
     . "${WD}/functions.sh"
     eval $( cat "${mvn_dist_home}/settings.cfg" )
+}
+
+get_mvn_binary() {
+    MVN_BINARY=$( which "${MVN_BINARY}" ) || ( printf "Maven binary not found...\\n"; exit 1 )# TODO: Use print_error or something.
 }
 
 source_strings() {
@@ -459,19 +467,18 @@ prepare_build() {
 build_with_spinner() {
     printf "* Build %b%s%b%s" "${GREEN}" "${pretty_print}" "${NO_COLOUR}" "${test_string}"
     if [[ -n "${build_parameters}" ]]; then
-        mvn clean install ${build_parameters} 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
+        "${MVN_BINARY}" clean install ${build_parameters} 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
     else
-        mvn clean install 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
+        "${MVN_BINARY}" clean install 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
     fi
     spin_cursor
 }
 
 build_verbose() {
     if [[ -n "${build_parameters}" ]]; then
-        mvn clean install ${build_parameters} > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
+        "${MVN_BINARY}" clean install ${build_parameters} > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
     else
-        mvn clean install > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
-        mvn clean install > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
+        "${MVN_BINARY}" clean install > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
     fi
     if ! wait "${pid}"; then
         if [[ "${continue}" -ne 1 ]]; then
@@ -607,6 +614,7 @@ display_summary() {
 get_mvn_dist_path
 source_dependencies
 find_or_copy_cfg
+get_mvn_binary
 calc_terminal_size
 read_profiles_cfg
 parse_applications_from_config
