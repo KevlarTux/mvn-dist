@@ -6,7 +6,7 @@ Builds maven projects in current or specified folder.
 Usagee:
 mvn-dist [options]
 
-##Options
+## Options
 ```bash
 Builds maven projects in current or specified folder.
 
@@ -33,7 +33,7 @@ Options:
 -a, --applications          Comma separated list of applications to build. 
 ```
 
-##Usage
+## Usage
 ```
 Examples:
 Build all applications in /mnt/data/git
