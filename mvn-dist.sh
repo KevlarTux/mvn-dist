@@ -195,7 +195,6 @@ display_options() {
 
     calc_flag_length
 
-    debug "terminal width in parse: ${terminal_width}"
     for i in "${!options[@]}"; do
         printf "%-${flag_length}s" "${i}"
         width=$(( terminal_width - flag_length ))
