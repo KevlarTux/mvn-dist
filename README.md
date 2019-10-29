@@ -3,7 +3,7 @@ Script for building (distributed) maven projects
 
 Builds maven projects in current or specified folder.
 
-Usagee:
+Usage:
 mvn-dist [options]
 
 ## Options

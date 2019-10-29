@@ -147,12 +147,6 @@ find_or_copy_cfg() {
     profiles_cfg="${mvn_dist_home}/${profiles_cfg}"
 }
 
-read_profiles_cfg() {
-    while read profile || [[ -n "${profile}" ]]; do
-        profiles+=( "${profile}" )
-    done < "${profiles_cfg}"
-}
-
 ### Utility for formatting output
 calc_terminal_size() {
     terminal_width=$(tput cols)
@@ -401,7 +395,7 @@ parse_options_and_initalize_values() {
     while [[ $# -gt 0 ]]; do
         case "${1}" in
             -a|--applications) chosen_applications="${2}" ; shift 2 ;;
-            -P|--profile) build_profile="-P${2}" ; shift 2 ;;
+            -P|--profile) verify_profile "${2}" ; shift 2 ;;
             -f|--force) force=1 ; shift ;;
             -n|--do-not-disturb) skip_notification=1 ; shift ;;
             -s|--skip-tests) skip_tests="-DskipTests" ; shift ;;
@@ -416,6 +410,20 @@ parse_options_and_initalize_values() {
             *) printf "%s" "$0: Error... Unknown flag. $1" 1>&2; exit 1 ;;
         esac
     done
+}
+
+verify_profile() {
+    given_profile="${1}"
+    found=
+
+    while read line; do
+        if [[ "${line}" == "${given_profile}" ]]; then
+            build_profile="${given_profile}"
+            found=1
+        fi
+    done < "${profiles_cfg}"
+
+    [[ -z ${found} ]] && printf "Profile %s not defined. Exiting...\\n" "${given_profile}" && exit 1
 }
 
 ### Save cursor position at the beginning of the line
@@ -615,7 +623,6 @@ source_dependencies
 find_or_copy_cfg
 get_mvn_binary
 calc_terminal_size
-read_profiles_cfg
 parse_applications_from_config
 source_strings
 parse_options_and_initalize_values "$@"
