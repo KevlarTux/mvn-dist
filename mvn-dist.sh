@@ -43,6 +43,7 @@ declare pretty_print=""
 declare available_options_string=""
 declare specified_modules=""
 declare check_diff_application=""
+declare parsed_line=""
 
 # From strings.sh, declare to satisfy syntax validation
 declare NO_COLOUR=""
@@ -205,10 +206,16 @@ display_options() {
     done
 }
 
+strip_comment() {
+    printf "%s" "${1}" | sed "s/#.*$//" | xargs
+}
+
 ### Read applications.cfg, declare as an array
 parse_applications_from_config() {
     while read line || [[ -n "${line}" ]]; do
-        parsed_line=$(printf "%s" "${line}" | sed "s/#.*$//" | xargs)
+        debug "Line: ${line}"
+        parsed_line=$(strip_comment "${line}")
+
         if [[ -n "${parsed_line}" ]]; then
             has_specified_submodules=$(grep ":" <<< "${parsed_line}")
 
@@ -389,7 +396,7 @@ calc_time_spent() {
 
 ### Parse options, assign values to variables.
 parse_options_and_initalize_values() {
-    available_options_string=$(getopt -o "esa:vzchfblnp:P:" -l "examples,skip-tests,fix-bugs,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applications:,help" -- "$@")
+    available_options_string=$(getopt -o "desa:vzchfblnp:P:" -l "examples,skip-tests,fix-bugs,debug,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applications:,help" -- "$@")
     eval set -- "${available_options_string}"
 
     while [[ $# -gt 0 ]]; do
@@ -406,6 +413,7 @@ parse_options_and_initalize_values() {
             -v|--verbose) verbose=1 ; shift ;;
             -h|--help) mvn_dist_help && exit 0 ;;
             -e|--eamples) usage && exit 0 ;;
+            -d|--debug) DEBUG=1 ; shift ;;
             --) shift ; break ;;
             *) printf "%s" "$0: Error... Unknown flag. $1" 1>&2; exit 1 ;;
         esac
@@ -417,7 +425,8 @@ verify_profile() {
     found=
 
     while read line; do
-        if [[ "${line}" == "${given_profile}" ]]; then
+        parsed_line=$(strip_comment "${line}")
+        if [[ "${parsed_line}" == "${given_profile}" ]]; then
             build_profile="${given_profile}"
             found=1
         fi
