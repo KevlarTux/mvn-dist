@@ -284,7 +284,7 @@ parse_applications_from_cli() {
         compare_applications
 
         if [[ "${#application_difference_array[@]}" -gt 0 ]]; then
-            print_warning "$(printf "Ukjent applikasjon %s" "${application_difference_array[*]}")"
+            print_warning "$(printf "Unknown application %s" "${application_difference_array[*]}")"
             exit 1
         fi
 
@@ -395,14 +395,14 @@ calc_time_spent() {
 }
 
 ### Parse options, assign values to variables.
-parse_options_and_initalize_values() {
+parse_options_and_initialize_values() {
     available_options_string=$(getopt -o "desa:vzchfblnp:P:" -l "examples,skip-tests,fix-bugs,debug,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applications:,help" -- "$@")
     eval set -- "${available_options_string}"
 
     while [[ $# -gt 0 ]]; do
         case "${1}" in
             -a|--applications) chosen_applications="${2}" ; shift 2 ;;
-            -P|--profile) verify_profile "${2}" ; shift 2 ;;
+            -P|--profile) build_profile="${2}" ; shift 2 ;;
             -f|--force) force=1 ; shift ;;
             -n|--do-not-disturb) skip_notification=1 ; shift ;;
             -s|--skip-tests) skip_tests="-DskipTests" ; shift ;;
@@ -412,7 +412,7 @@ parse_options_and_initalize_values() {
             -b|--fix-bugs) printf "%b" "${FIX}" && exit 0 ;;
             -v|--verbose) verbose=1 ; shift ;;
             -h|--help) mvn_dist_help && exit 0 ;;
-            -e|--eamples) usage && exit 0 ;;
+            -e|--examples) usage && exit 0 ;;
             -d|--debug) DEBUG=1 ; shift ;;
             --) shift ; break ;;
             *) printf "%s" "$0: Error... Unknown flag. $1" 1>&2; exit 1 ;;
@@ -420,23 +420,8 @@ parse_options_and_initalize_values() {
     done
 }
 
-verify_profile() {
-    given_profile="${1}"
-    found=
-
-    while read line; do
-        parsed_line=$(strip_comment "${line}")
-        if [[ "${parsed_line}" == "${given_profile}" ]]; then
-            build_profile="${given_profile}"
-            found=1
-        fi
-    done < "${profiles_cfg}"
-
-    [[ -z ${found} ]] && printf "Profile %s not defined. Exiting...\\n" "${given_profile}" && exit 1
-}
-
 ### Save cursor position at the beginning of the line
-initalize_cursor_position() {
+initialize_cursor_position() {
     printf "\\n"
     save_cursor_position
 }
@@ -634,8 +619,8 @@ get_mvn_binary
 calc_terminal_size
 parse_applications_from_config
 source_strings
-parse_options_and_initalize_values "$@"
-initalize_cursor_position
+parse_options_and_initialize_values "$@"
+initialize_cursor_position
 application_parsed_from_cli
 application_folder_exists
 build_applications
