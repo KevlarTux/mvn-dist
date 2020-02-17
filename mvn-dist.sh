@@ -19,7 +19,6 @@ declare -a order=()
 declare -a applications_from_cli_array=()
 declare -a applications_from_config_array=()
 declare -a application_difference_array=()
-declare -a profiles=()
 
 ### Strings
 declare ERROR_MSG=""
@@ -35,7 +34,6 @@ declare path=.
 declare application_path=""
 declare absolute_path=""
 declare application=""
-declare profiles_cfg="profiles.cfg"
 declare applications_cfg="applications.cfg"
 declare settings_cfg="settings.cfg"
 declare mvn_dist_home="${HOME}/.mvn-dist"
@@ -131,12 +129,9 @@ find_or_copy_cfg() {
         if [[ ! -e "${mvn_dist_home}/${settings_cfg}" ]]; then
             copy_config_array+=( "${settings_cfg}" )
         fi
-        if [[ ! -e "${mvn_dist_home}/${profiles_cfg}" ]]; then
-            copy_config_array+=( "${profiles_cfg}" )
-        fi
     else
         mkdir "${mvn_dist_home}"
-        copy_config_array=( "${applications_cfg}" "${profiles_cfg}" "${settings_cfg}" )
+        copy_config_array=( "${applications_cfg}" "${settings_cfg}" )
     fi
 
     if [[ "${#copy_config_array[@]}" -gt 0 ]]; then
@@ -145,7 +140,6 @@ find_or_copy_cfg() {
 
     applications_cfg="${mvn_dist_home}/${applications_cfg}"
     settings_cfg="${mvn_dist_home}/${settings_cfg}"
-    profiles_cfg="${mvn_dist_home}/${profiles_cfg}"
 }
 
 ### Utility for formatting output
@@ -175,7 +169,6 @@ calc_flag_length() {
 ### Options
 display_options() {
     options=(
-                ["-P, --profile"]="One of the profiles provided in profiles.cfg."
                 ["-p, --path=/path/to/source"]="Path to the folder holding the applications to build."
                 ["-a, --applications"]="Comma separated list of applications to build."
                 ["-f, --force"]="Force mvn-dist to build applications provided by -a|--applications in given order. This also supports custom names of folders holding the applications."
