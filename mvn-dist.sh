@@ -29,7 +29,6 @@ declare MVN_BINARY=""
 declare config_app=""
 declare build_profile=""
 declare log="/tmp/mvn-dist.log"
-declare error_log="/tmp/mvn-dist-error.log"
 declare chosen_applications=
 declare path=.
 declare application_path=""
@@ -75,6 +74,7 @@ declare -i build_count=0
 declare -i pid
 
 ### Boolean Simulator
+declare -i ON_WINDOWS=0
 declare -i verbose=0
 declare -i force=0
 declare -i continue=0
@@ -91,10 +91,21 @@ debug() {
     fi
 }
 
+### Check for OS
+check_for_windows() {
+    OPERATING_SYSTEM=$( env | grep 'OS=' | sed 's/OS=//')
+    [[ $(expr index "${OPERATING_SYSTEM}" "Win") -eq 1 ]] && ON_WINDOWS=1
+}
+
 ### Get working directory
 get_mvn_dist_path() {
     path=$(pwd)
-    WD="$( cd $( dirname $( readlink -f ${BASH_SOURCE[0]} ) ) && pwd )"
+
+    if [[ ${ON_WINDOWS} -eq 1 ]]; then
+        WD="$( cd $( dirname $( ${BASH_SOURCE[0]} ) ) && pwd ) )"
+    else
+        WD="$( cd $( dirname $( readlink -f ${BASH_SOURCE[0]} ) ) && pwd )"
+    fi
 }
 
 # Source dependencies
@@ -104,7 +115,7 @@ source_dependencies() {
 }
 
 get_mvn_binary() {
-    MVN_BINARY=$( which "${MVN_BINARY}" ) || ( printf "Maven binary not found...\\n"; exit 1 )# TODO: Use print_error or something.
+    MVN_BINARY=$( which "${MVN_BINARY}" ) || ( printf "Maven binary not found...\\n"; exit 1 ) # TODO: Use print_error or something.
 }
 
 source_strings() {
@@ -213,7 +224,6 @@ strip_comment() {
 ### Read applications.cfg, declare as an array
 parse_applications_from_config() {
     while read line || [[ -n "${line}" ]]; do
-        debug "Line: ${line}"
         parsed_line=$(strip_comment "${line}")
 
         if [[ -n "${parsed_line}" ]]; then
@@ -396,7 +406,7 @@ calc_time_spent() {
 
 ### Parse options, assign values to variables.
 parse_options_and_initalize_values() {
-    available_options_string=$(getopt -o "desa:vzchfblnp:P:" -l "examples,skip-tests,fix-bugs,debug,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applications:,help" -- "$@")
+    available_options_string=$(getopt -o "dusa:vzchfblnp:P:" -l "usage,skip-tests,fix-bugs,debug,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applications:,help" -- "$@")
     eval set -- "${available_options_string}"
 
     while [[ $# -gt 0 ]]; do
@@ -412,7 +422,7 @@ parse_options_and_initalize_values() {
             -b|--fix-bugs) printf "%b" "${FIX}" && exit 0 ;;
             -v|--verbose) verbose=1 ; shift ;;
             -h|--help) mvn_dist_help && exit 0 ;;
-            -e|--eamples) usage && exit 0 ;;
+            -u|--usage) usage && exit 0 ;;
             -d|--debug) DEBUG=1 ; shift ;;
             --) shift ; break ;;
             *) printf "%s" "$0: Error... Unknown flag. $1" 1>&2; exit 1 ;;
@@ -483,18 +493,18 @@ prepare_build() {
 build_with_spinner() {
     printf "* Build %b%s%b%s" "${GREEN}" "${pretty_print}" "${NO_COLOUR}" "${test_string}"
     if [[ -n "${build_parameters}" ]]; then
-        "${MVN_BINARY}" clean install ${build_parameters} 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
+        "${MVN_BINARY}" clean install ${build_parameters} &>"${log}" & pid=$!
     else
-        "${MVN_BINARY}" clean install 2> >(tee "${error_log}" >&2) &>"${log}" & pid=$!
+        "${MVN_BINARY}" clean install &>"${log}" & pid=$!
     fi
     spin_cursor
 }
 
 build_verbose() {
     if [[ -n "${build_parameters}" ]]; then
-        "${MVN_BINARY}" clean install ${build_parameters} > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
+        "${MVN_BINARY}" clean install ${build_parameters} & pid=$!
     else
-        "${MVN_BINARY}" clean install > >(tee "${log}" 2> >(tee "${error_log}" >&2)) & pid=$!
+        "${MVN_BINARY}" clean install & pid=$!
     fi
     if ! wait "${pid}"; then
         if [[ "${continue}" -ne 1 ]]; then
@@ -627,6 +637,7 @@ display_summary() {
 }
 
 #### Start script
+check_for_windows
 get_mvn_dist_path
 source_dependencies
 find_or_copy_cfg
