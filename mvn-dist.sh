@@ -105,7 +105,7 @@ source_dependencies() {
 }
 
 get_mvn_binary() {
-    MVN_BINARY=$( which "${MVN_BINARY}" ) || ( printf "Maven binary not found...\\n"; exit 1 )# TODO: Use print_error or something.
+    MVN_BINARY=$( which "${MVN_BINARY}" ) || ( printf "%s\\n" "Maven binary not found..." && exit 1 )
 }
 
 source_strings() {
@@ -149,7 +149,7 @@ calc_terminal_size() {
 
     if [[ "${terminal_width}" -lt "${MIN_TERMINAL_WIDTH}" ]]; then
         printf "The terminal needs a width of at least %s to give feedback in a meaningful format." "${MIN_TERMINAL_WIDTH}" # TODO: Error message?
-        exit 1;
+        exit 1
     fi
 }
 
@@ -614,6 +614,7 @@ calc_terminal_size
 source_strings
 parse_options_and_initialize_values "$@"
 get_mvn_binary
+[[ $? == 1 ]] && exit 1
 parse_applications_from_config
 initialize_cursor_position
 application_parsed_from_cli
