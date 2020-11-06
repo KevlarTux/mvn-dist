@@ -21,7 +21,6 @@ Options:
 -h, --help                  This help page. 
 -p, --path=/path/to/source  Path to the folder holding the applications to 
                             build. 
--P, --profile               One of the profiles provided in profiles.cfg. 
 -c, --continue-on-error     Continue building the next application on build 
                             failure. 
 -f, --force                 Force mvn-dist to build applications provided by 
@@ -48,15 +47,14 @@ mvn-dist -a model,common,case -f
 Build an application with a custom name.
 mvn-dist -a monolith -f
 
-Build all applications in /mnt/data/git with profile it,
+Build all applications in /mnt/data/git,
 Continue building the next application on build error and log separately.
-mvn-dist -p /mnt/data/git -P it -c -l
+mvn-dist -p /mnt/data/git -c -l
 
 Tip:
 Use short flags when you need tab completion.
 If utilizing --continue-on-error you should consider splitting logs using --split-logs.
 Add applications to build in applications.cfg
-Add build profiles in profiles.cfg
 
 Known issues and quirks:
 applications.cfg and its siblings should be edited using a UNIX flavour due to MS' new-line challenges.
@@ -65,5 +63,4 @@ Consider using a terminal with a minimum width of 80 to get decently formatted o
 Configuration files:
 ${HOME}/.mvn-dist/applications.cfg
 ${HOME}/.mvn-dist/settings.cfg
-${HOME}/.mvn-dist/profiles.cfg
 ```

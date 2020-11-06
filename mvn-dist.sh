@@ -19,7 +19,6 @@ declare -a order=()
 declare -a applications_from_cli_array=()
 declare -a applications_from_config_array=()
 declare -a application_difference_array=()
-declare -a profiles=()
 
 ### Strings
 declare ERROR_MSG=""
@@ -34,7 +33,6 @@ declare path=.
 declare application_path=""
 declare absolute_path=""
 declare application=""
-declare profiles_cfg="profiles.cfg"
 declare applications_cfg="applications.cfg"
 declare settings_cfg="settings.cfg"
 declare mvn_dist_home="${HOME}/.mvn-dist"
@@ -110,12 +108,15 @@ get_mvn_dist_path() {
 
 # Source dependencies
 source_dependencies() {
+
+    applications_cfg="${mvn_dist_home}/${applications_cfg}"
+    settings_cfg="${mvn_dist_home}/${settings_cfg}"
     . "${WD}/functions.sh"
     eval $( cat "${mvn_dist_home}/settings.cfg" )
 }
 
 get_mvn_binary() {
-    MVN_BINARY=$( which "${MVN_BINARY}" ) || ( printf "Maven binary not found...\\n"; exit 1 ) # TODO: Use print_error or something.
+    MVN_BINARY=$( which "${MVN_BINARY}" ) || ( printf "%s\\n" "Maven binary not found..." && exit 1 )
 }
 
 source_strings() {
@@ -142,21 +143,14 @@ find_or_copy_cfg() {
         if [[ ! -e "${mvn_dist_home}/${settings_cfg}" ]]; then
             copy_config_array+=( "${settings_cfg}" )
         fi
-        if [[ ! -e "${mvn_dist_home}/${profiles_cfg}" ]]; then
-            copy_config_array+=( "${profiles_cfg}" )
-        fi
     else
         mkdir "${mvn_dist_home}"
-        copy_config_array=( "${applications_cfg}" "${profiles_cfg}" "${settings_cfg}" )
+        copy_config_array=( "${applications_cfg}" "${settings_cfg}" )
     fi
 
     if [[ "${#copy_config_array[@]}" -gt 0 ]]; then
         copy_cfg "${copy_config_array[@]}"
     fi
-
-    applications_cfg="${mvn_dist_home}/${applications_cfg}"
-    settings_cfg="${mvn_dist_home}/${settings_cfg}"
-    profiles_cfg="${mvn_dist_home}/${profiles_cfg}"
 }
 
 ### Utility for formatting output
@@ -166,7 +160,7 @@ calc_terminal_size() {
 
     if [[ "${terminal_width}" -lt "${MIN_TERMINAL_WIDTH}" ]]; then
         printf "The terminal needs a width of at least %s to give feedback in a meaningful format." "${MIN_TERMINAL_WIDTH}" # TODO: Error message?
-        exit 1;
+        exit 1
     fi
 }
 
@@ -186,7 +180,6 @@ calc_flag_length() {
 ### Options
 display_options() {
     options=(
-                ["-P, --profile"]="One of the profiles provided in profiles.cfg."
                 ["-p, --path=/path/to/source"]="Path to the folder holding the applications to build."
                 ["-a, --applications"]="Comma separated list of applications to build."
                 ["-f, --force"]="Force mvn-dist to build applications provided by -a|--applications in given order. This also supports custom names of folders holding the applications."
@@ -294,7 +287,7 @@ parse_applications_from_cli() {
         compare_applications
 
         if [[ "${#application_difference_array[@]}" -gt 0 ]]; then
-            print_warning "$(printf "Ukjent applikasjon %s" "${application_difference_array[*]}")"
+            print_warning "$(printf "Unknown application %s" "${application_difference_array[*]}")"
             exit 1
         fi
 
@@ -405,14 +398,16 @@ calc_time_spent() {
 }
 
 ### Parse options, assign values to variables.
-parse_options_and_initalize_values() {
-    available_options_string=$(getopt -o "dusa:vzchfblnp:P:" -l "usage,skip-tests,fix-bugs,debug,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applications:,help" -- "$@")
+parse_options_and_initialize_values() {
+    available_options_string=$(getopt -o "desa:vzchfblnp:P:" -l "examples,skip-tests,fix-bugs,debug,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applications:,help" -- "$@")
     eval set -- "${available_options_string}"
+
+    debug 13 "$@"
 
     while [[ $# -gt 0 ]]; do
         case "${1}" in
             -a|--applications) chosen_applications="${2}" ; shift 2 ;;
-            -P|--profile) verify_profile "${2}" ; shift 2 ;;
+            -P|--profile) build_profile="${2}" ; shift 2 ;;
             -f|--force) force=1 ; shift ;;
             -n|--do-not-disturb) skip_notification=1 ; shift ;;
             -s|--skip-tests) skip_tests="-DskipTests" ; shift ;;
@@ -422,7 +417,7 @@ parse_options_and_initalize_values() {
             -b|--fix-bugs) printf "%b" "${FIX}" && exit 0 ;;
             -v|--verbose) verbose=1 ; shift ;;
             -h|--help) mvn_dist_help && exit 0 ;;
-            -u|--usage) usage && exit 0 ;;
+            -e|--examples) usage && exit 0 ;;
             -d|--debug) DEBUG=1 ; shift ;;
             --) shift ; break ;;
             *) printf "%s" "$0: Error... Unknown flag. $1" 1>&2; exit 1 ;;
@@ -430,23 +425,8 @@ parse_options_and_initalize_values() {
     done
 }
 
-verify_profile() {
-    given_profile="${1}"
-    found=
-
-    while read line; do
-        parsed_line=$(strip_comment "${line}")
-        if [[ "${parsed_line}" == "${given_profile}" ]]; then
-            build_profile="${given_profile}"
-            found=1
-        fi
-    done < "${profiles_cfg}"
-
-    [[ -z ${found} ]] && printf "Profile %s not defined. Exiting...\\n" "${given_profile}" && exit 1
-}
-
 ### Save cursor position at the beginning of the line
-initalize_cursor_position() {
+initialize_cursor_position() {
     printf "\\n"
     save_cursor_position
 }
@@ -639,14 +619,15 @@ display_summary() {
 #### Start script
 check_for_windows
 get_mvn_dist_path
-source_dependencies
 find_or_copy_cfg
-get_mvn_binary
+source_dependencies
 calc_terminal_size
-parse_applications_from_config
 source_strings
-parse_options_and_initalize_values "$@"
-initalize_cursor_position
+parse_options_and_initialize_values "$@"
+get_mvn_binary
+[[ $? == 1 ]] && exit 1
+parse_applications_from_config
+initialize_cursor_position
 application_parsed_from_cli
 application_folder_exists
 build_applications

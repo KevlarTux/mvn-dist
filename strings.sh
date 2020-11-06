@@ -8,7 +8,6 @@ BLUE="\e[96m"
 BOLD="\e[1m"
 BLINK="\e[5m"
 
-UNKNOWN_PROFILE="Unknown maven profile. Please refer to profiles.cfg for valid options."
 BUILD_FAILURE="Build failure. Please check the logs for further details."
 PERMISSIONS="Unable to access specified directory. Please check the permisions."
 NOT_FOUND="Could not find specified application folder."
@@ -51,7 +50,6 @@ ${GREEN}Tip:${NO_COLOUR}
 Use short flags when you need tab completion.
 If utilizing --continue-on-error you should consider splitting logs using --split-logs.
 Add applications to build in applications.cfg
-Add build profiles in profiles.cfg
 
 ${GREEN}Known issues and quirks:${NO_COLOUR}
 applications.cfg and its siblings should be edited using a UNIX flavour due to MS' new-line challenges.
@@ -59,8 +57,7 @@ Consider using a terminal with a minimum width of 80 to get decently formatted o
 
 ${GREEN}Configuration files:${NO_COLOUR}
 ${applications_cfg}
-${settings_cfg}
-${profiles_cfg}\\n
+${settings_cfg}\\n
 EOM
 
 ### So shoot me
