@@ -97,6 +97,9 @@ get_mvn_dist_path() {
 
 # Source dependencies
 source_dependencies() {
+
+    applications_cfg="${mvn_dist_home}/${applications_cfg}"
+    settings_cfg="${mvn_dist_home}/${settings_cfg}"
     . "${WD}/functions.sh"
     eval $( cat "${mvn_dist_home}/settings.cfg" )
 }
@@ -137,9 +140,6 @@ find_or_copy_cfg() {
     if [[ "${#copy_config_array[@]}" -gt 0 ]]; then
         copy_cfg "${copy_config_array[@]}"
     fi
-
-    applications_cfg="${mvn_dist_home}/${applications_cfg}"
-    settings_cfg="${mvn_dist_home}/${settings_cfg}"
 }
 
 ### Utility for formatting output
@@ -392,6 +392,8 @@ parse_options_and_initialize_values() {
     available_options_string=$(getopt -o "desa:vzchfblnp:P:" -l "examples,skip-tests,fix-bugs,debug,do-not-disturb,split-logs,verbose,continue-on-error,force,path:,profile:,applications:,help" -- "$@")
     eval set -- "${available_options_string}"
 
+    debug 13 "$@"
+
     while [[ $# -gt 0 ]]; do
         case "${1}" in
             -a|--applications) chosen_applications="${2}" ; shift 2 ;;
@@ -606,13 +608,13 @@ display_summary() {
 
 #### Start script
 get_mvn_dist_path
-source_dependencies
 find_or_copy_cfg
-get_mvn_binary
+source_dependencies
 calc_terminal_size
-parse_applications_from_config
 source_strings
 parse_options_and_initialize_values "$@"
+get_mvn_binary
+parse_applications_from_config
 initialize_cursor_position
 application_parsed_from_cli
 application_folder_exists
