@@ -101,6 +101,7 @@ get_mvn_dist_path() {
 
     if [[ ${ON_WINDOWS} -eq 1 ]]; then
         WD="$( cd $( dirname $( ${BASH_SOURCE[0]} ) ) && pwd ) )"
+        mvn_dist_home="${WD}"
     else
         WD="$( cd $( dirname $( readlink -f ${BASH_SOURCE[0]} ) ) && pwd )"
     fi
@@ -111,8 +112,9 @@ source_dependencies() {
 
     applications_cfg="${mvn_dist_home}/${applications_cfg}"
     settings_cfg="${mvn_dist_home}/${settings_cfg}"
+
     . "${WD}/functions.sh"
-    eval $( cat "${mvn_dist_home}/settings.cfg" )
+    eval $( cat "${settings_cfg}" )
 }
 
 get_mvn_binary() {
@@ -603,6 +605,11 @@ generate_error_message() {
     fi
 }
 
+### Calculate and print start time
+print_time() {
+  date +"%T"
+}
+
 ### Summarize
 display_summary() {
     if [[ "${build_count}" -gt 0 ]]; then
@@ -618,8 +625,7 @@ display_summary() {
 
 #### Start script
 check_for_windows
-get_mvn_dist_path
-find_or_copy_cfg
+[[ ${ON_WINDOWS} -eq 0 ]] && get_mvn_dist_path && find_or_copy_cfg
 source_dependencies
 calc_terminal_size
 source_strings
