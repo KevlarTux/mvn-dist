@@ -630,8 +630,7 @@ source_dependencies
 calc_terminal_size
 source_strings
 parse_options_and_initialize_values "$@"
-get_mvn_binary
-[[ $? == 1 ]] && exit 1
+[[ ${ON_WINDOWS} -eq 0 ]] && get_mvn_binary && [[ $? == 1 ]] && exit 1
 parse_applications_from_config
 initialize_cursor_position
 application_parsed_from_cli
