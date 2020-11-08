@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-DEBUG=1
+DEBUG=0
 ### Functions
 declare -f move_cursor_up
 declare -f move_cursor_down
@@ -97,10 +97,13 @@ check_for_windows() {
 
 ### Get working directory
 get_mvn_dist_path() {
-    path=$(pwd)
+    path="$( pwd )"
 
     if [[ ${ON_WINDOWS} -eq 1 ]]; then
-        WD="$( cd $( dirname $( readlink -f ${BASH_SOURCE[0]} ) ) && pwd )"
+        bs="${BASH_SOURCE[0]}"
+        dn="$( dirname '${bs}' )"
+        cd "${dn}"
+        WD="$( pwd )"
         mvn_dist_home="${WD}"
     else
         WD="$( cd $( dirname $( readlink -f ${BASH_SOURCE[0]} ) ) && pwd )"
