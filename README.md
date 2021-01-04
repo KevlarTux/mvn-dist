@@ -1,5 +1,5 @@
 # mvn-dist
-Script for building (distributed) maven projects
+Script for building (distributed) maven projects. _mvn_ needs to be installed and available in $PATH.
 
 Builds maven projects in current or specified folder.
 
